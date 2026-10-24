@@ -1,0 +1,30 @@
+% How OpenTofu chooses the symbol of each resource in a plan.
+\documentclass[border=6pt]{standalone}
+\usepackage{tofu}
+\begin{document}
+\begin{tikzpicture}[papier,
+    q/.style={decision, font=\sffamily\scriptsize, text width=30mm, align=center, inner sep=1pt},
+    act/.style={bloc=#1, minimum width=34mm, minimum height=12mm, text width=31mm, align=center}]
+  \node[q] (inconf) {dans la\\ configuration ?};
+  \node[q, right=16mm of inconf] (instate) {dans le state\\ et existe encore ?};
+  \node[q, right=16mm of instate] (diff) {un attribut\\ diffère ?};
+  \node[q, right=16mm of diff] (force) {le provider exige\\ un remplacement ?};
+  \node[act=Prose, below=14mm of inconf] (del) {\ttfamily\large -\\[-1pt]{\sffamily\scriptsize détruire}};
+  \node[act=Pvert, below=14mm of instate] (add) {\ttfamily\large +\\[-1pt]{\sffamily\scriptsize créer}};
+  \node[act=Psauge, below=14mm of diff] (none) {(rien)\\[-1pt]{\scriptsize No changes}};
+  \node[act=Porange, below=14mm of force, xshift=-20mm] (upd) {\ttfamily\large \textasciitilde\\[-1pt]{\sffamily\scriptsize modifier en place}};
+  \node[act=Pmauve, below=14mm of force, xshift=20mm] (rep) {\ttfamily\large -/+\\[-1pt]{\sffamily\scriptsize remplacer}};
+  \draw[fl] (inconf) -- node[etb, above] {oui} (instate);
+  \draw[fl] (instate) -- node[etb, above] {oui} (diff);
+  \draw[fl] (diff) -- node[etb, above] {oui} (force);
+  \draw[fl] (inconf) -- node[etb, right] {non} (del);
+  \draw[fl] (instate) -- node[etb, right] {non} (add);
+  \draw[fl] (diff) -- node[etb, right] {non} (none);
+  \draw[fl] (force.south) -- ++(0,-5mm) -| node[etb, pos=0.75, left] {non} (upd.north);
+  \draw[fl] (force.south) -- ++(0,-5mm) -| node[etb, pos=0.75, right] {oui} (rep.north);
+  \node[note, below=2mm of del, text width=34mm] {bloc retiré,\\ \ttfamily tofu destroy};
+  \node[note, below=2mm of add, text width=34mm] {premier apply,\\ objet supprimé à la main};
+  \node[note, below=2mm of upd, text width=34mm] {\ttfamily input = "v2"};
+  \node[note, below=2mm of rep, text width=34mm] {\ttfamily file\_permission};
+\end{tikzpicture}
+\end{document}

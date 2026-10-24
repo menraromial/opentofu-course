@@ -1,0 +1,708 @@
+---
+title: Premier projet
+sidebar_label: 3. Premier projet
+description: Un premier projet OpenTofu sur le poste, avec un nom aléatoire et un fichier local, pour lire une fois en entier ce que font init, validate, plan, apply et destroy, et ce qu'ils écrivent sur le disque.
+part: 1
+chapter: 3
+---
+
+import anatomy from '@site/src/figures/project-anatomy.svg';
+import planActions from '@site/src/figures/plan-actions.svg';
+
+Le premier projet de ce cours ne crée rien de coûteux ni de distant. Il génère un nom aléatoire de deux mots et écrit un fichier texte qui contient ce nom. Ces deux objets suffisent pour parcourir le cycle complet d’OpenTofu et pour regarder chaque fichier que les commandes produisent, ce qui est plus difficile à faire avec un réseau AWS où chaque essai prend des minutes. Le code est dans [`labs/ch03/first-project`](https://github.com/menraromial/opentofu-course/tree/main/labs/ch03/first-project).
+
+## Le code
+
+Un projet OpenTofu est un dossier qui contient des fichiers `.tf`. Celui-ci en a deux. Le premier déclare la version d’OpenTofu attendue et les providers requis, selon la convention fixée au ch. 2 :
+
+```hcl title="labs/ch03/first-project/versions.tf"
+language {
+  compatible_with {
+    opentofu = ">= 1.13.0"
+  }
+}
+
+terraform {
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.9"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.9"
+    }
+  }
+}
+```
+
+Deux providers sont nécessaires. `hashicorp/random` produit des valeurs aléatoires (noms, entiers, chaînes, mots de passe) et les garde ensuite stables, ce qui le distingue d’une fonction aléatoire ordinaire, comme on le verra. `hashicorp/local` gère des fichiers sur le disque de la machine qui exécute `tofu`. La contrainte `~> 2.9` accepte toute version 2.x à partir de 2.9 (2.9.1, 2.10...) et refuse la 3.0 ; le ch. 6 détaille ces opérateurs.
+
+Le second fichier décrit les deux ressources :
+
+```hcl title="labs/ch03/first-project/main.tf"
+# A random two-word name, generated once and kept in the state.
+resource "random_pet" "name" {
+  length = 2
+}
+
+# A file on the local disk whose content uses the generated name.
+resource "local_file" "greeting" {
+  filename = "${path.module}/out/greeting.txt"
+  content  = "Hello from ${random_pet.name.id}\n"
+}
+```
+
+Un bloc `resource` porte deux étiquettes. La première, `random_pet`, est le **type** de ressource ; son préfixe (`random_`) indique le provider qui la gère. La seconde, `name`, est le **nom local**, choisi librement, qui ne sert qu’à désigner la ressource ailleurs dans la configuration. Le couple forme l'**adresse** de la ressource, `random_pet.name`, que toutes les commandes utilisent. Entre les accolades viennent les arguments, dont la liste et le sens sont définis par le provider : `length = 2` demande un nom de deux mots.
+
+`${...}` insère une expression dans une chaîne. `path.module` vaut le chemin du dossier de la configuration, ici `.`. `random_pet.name.id` est l’attribut `id` de la ressource `random_pet.name`, c’est-à-dire le nom généré. Comme au [ch. 1](../part-0/infrastructure-as-code.mdx), cette référence crée une dépendance : le fichier ne peut être écrit qu’une fois le nom connu.
+
+## `tofu init`
+
+La première commande, dans le dossier du projet, est toujours `tofu init`. Elle lit les blocs `required_providers`, cherche dans le registre les versions qui satisfont les contraintes, les télécharge et les vérifie :
+
+```console
+$ tofu init
+
+Initializing the backend...
+
+Initializing provider plugins...
+- Finding hashicorp/random versions matching "~> 3.9"...
+- Finding hashicorp/local versions matching "~> 2.9"...
+- Installing hashicorp/random v3.9.1 to the shared cache directory...
+- Installing hashicorp/local v2.9.1 to the shared cache directory...
+- Installed hashicorp/random v3.9.1 (signed, key ID 0C0AF313E5FD9F80)
+- Using hashicorp/random v3.9.1 from the shared cache directory
+- Installed hashicorp/local v2.9.1 (signed, key ID 0C0AF313E5FD9F80)
+- Using hashicorp/local v2.9.1 from the shared cache directory
+
+Providers are signed by their developers.
+If you'd like to know more about provider signing, you can read about it here:
+https://opentofu.org/docs/cli/plugins/signing/
+
+OpenTofu has created a lock file .terraform.lock.hcl to record the provider
+selections it made above. Include this file in your version control repository
+so that OpenTofu can guarantee to make the same selections by default when
+you run "tofu init" in the future.
+
+OpenTofu has been successfully initialized!
+...
+```
+
+`Initializing the backend` concerne l’endroit où sera rangé le state ; sans configuration particulière, c’est un fichier local, et il n’y a rien à faire (le ch. 20 configure un backend distant). Pour chaque provider, OpenTofu annonce la contrainte, la version retenue (la plus récente qui la satisfait, 3.9.1 et 2.9.1), puis l’installation dans le cache partagé configuré au ch. 2. `signed, key ID 0C0AF313E5FD9F80` est la clé GPG d’OpenTofu, la même que pour le binaire `tofu` ; les providers `hashicorp/*` du registre d’OpenTofu sont signés avec elle, alors que le provider Docker du [ch. 1](../part-0/infrastructure-as-code.mdx) portait la clé de son propre éditeur (`0DCE698927DAF8EC`).
+
+### Le dossier `.terraform`
+
+`tofu init` a créé un dossier caché :
+
+```console
+$ find .terraform -maxdepth 6 | sort
+.terraform
+.terraform/providers
+.terraform/providers/registry.opentofu.org
+.terraform/providers/registry.opentofu.org/hashicorp
+.terraform/providers/registry.opentofu.org/hashicorp/local
+.terraform/providers/registry.opentofu.org/hashicorp/local/2.9.1
+.terraform/providers/registry.opentofu.org/hashicorp/local/2.9.1/linux_amd64
+.terraform/providers/registry.opentofu.org/hashicorp/random
+.terraform/providers/registry.opentofu.org/hashicorp/random/3.9.1
+.terraform/providers/registry.opentofu.org/hashicorp/random/3.9.1/linux_amd64
+```
+
+L’arborescence reprend l’adresse complète du provider (registre, organisation, nom), sa version et la plateforme. Le dernier niveau est un lien symbolique vers le cache, qui contient le provider lui-même, un exécutable de 18 Mo pour `local` :
+
+```console
+$ ls -la ~/.cache/opentofu/plugins/registry.opentofu.org/hashicorp/local/2.9.1/linux_amd64/
+...
+-rw-r--r-- 1 romial romial     9111 Oct 24 14:16 CHANGELOG.md
+-rw-r--r-- 1 romial romial    16757 Oct 24 14:16 LICENSE
+-rw-r--r-- 1 romial romial     5460 Oct 24 14:16 README.md
+-rwxr-xr-x 1 romial romial 18354338 Oct 24 14:16 terraform-provider-local
+```
+
+C’est ce programme `terraform-provider-local` que `tofu` lancera comme un processus séparé à chaque commande, pour lui déléguer tout ce qui touche aux fichiers (le [ch. 1](../part-0/infrastructure-as-code.mdx) en a donné le principe, le ch. 6 et le ch. 39 entrent dans le détail). Le dossier `.terraform` se reconstruit à tout moment avec `tofu init` ; il ne se versionne pas.
+
+### Le fichier de verrouillage
+
+Le second fichier créé, `.terraform.lock.hcl`, enregistre la version exacte retenue pour chaque provider et les empreintes qui permettent de vérifier, aux `init` suivants, que l’on récupère bien les mêmes fichiers. En voici le début :
+
+```hcl title=".terraform.lock.hcl (extrait)"
+# This file is maintained automatically by "tofu init".
+# Manual edits may be lost in future updates.
+
+provider "registry.opentofu.org/hashicorp/local" {
+  version     = "2.9.1"
+  constraints = "~> 2.9"
+  hashes = [
+    "h1:0h5XUt+skYQCSCf+BHzPWHwaqVqo0I+6fasc7/9fP2Y=",
+    "h1:5Y/Fp+WG8q5OO7fbf832bKjGJtKwrUmo0dK3e87ByVM=",
+    ...
+    "zh:1127941790dbded1031144cd3617ecb44cdac28dbb4fd32b231f9b9f5f3c957c",
+    "zh:1418b8844bbf5ac941afa1ff2ec3e1c61f923a2777d8aa7ec4a6e6b8e66df57c",
+    ...
+  ]
+}
+```
+
+Chaque provider a quinze empreintes `zh:` et quinze empreintes `h1:`, une de chaque sorte par plateforme pour laquelle le provider est publié (Linux, macOS, Windows, FreeBSD, sur plusieurs processeurs). Les deux préfixes désignent deux façons de calculer l’empreinte. `zh:` (*zip hash*) est le SHA-256 de l’archive `.zip` officielle telle que le registre la publie. `h1:` (*hash scheme 1*) est un SHA-256 calculé sur le contenu de l’archive une fois décompressée, ce qui permet de vérifier aussi un provider installé depuis un miroir ou un cache, où il n’existe plus sous forme de zip[^lock].
+
+Ce fichier se versionne. Grâce à lui, un collègue ou un pipeline qui lance `tofu init` six mois plus tard obtient la version 2.9.1 et non la 2.11 sortie entre-temps, et `tofu init` refuse un fichier dont l’empreinte ne correspond à aucune de celles enregistrées. La documentation appelle ce modèle *trust on first use* : on vérifie le provider la première fois, puis OpenTofu garantit que c’est toujours le même[^lock]. Le ch. 38 montre comment monter de version volontairement.
+
+## `tofu validate`
+
+`tofu validate` vérifie la configuration sans rien contacter : la syntaxe, les noms de blocs et d’arguments, les types des valeurs, les références vers des ressources qui existent dans la configuration.
+
+```console
+$ tofu validate
+Success! The configuration is valid.
+```
+
+Une faute de frappe dans un nom d’argument (`lenght = 2`) ou une référence vers une ressource inexistante est signalée ici, avec le fichier et la ligne. `validate` ne sait rien de l’infrastructure réelle ; il ne peut pas dire si un fichier existe ni si un nom de bucket est libre.
+
+## `tofu plan`
+
+`tofu plan` calcule ce qu’il faudrait faire pour que la réalité corresponde à la configuration, et l’affiche sans rien modifier :
+
+```console
+$ tofu plan
+
+OpenTofu used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+OpenTofu will perform the following actions:
+
+  # local_file.greeting will be created
+  + resource "local_file" "greeting" {
+      + content              = (known after apply)
+      + content_base64sha256 = (known after apply)
+      + content_base64sha512 = (known after apply)
+      + content_md5          = (known after apply)
+      + content_sha1         = (known after apply)
+      + content_sha256       = (known after apply)
+      + content_sha512       = (known after apply)
+      + directory_permission = "0777"
+      + file_permission      = "0777"
+      + filename             = "./out/greeting.txt"
+      + id                   = (known after apply)
+    }
+
+  # random_pet.name will be created
+  + resource "random_pet" "name" {
+      + id        = (known after apply)
+      + length    = 2
+      + separator = "-"
+    }
+
+Plan: 2 to add, 0 to change, 0 to destroy.
+
+─────────────────────────────────────────────────────────────────────────────
+
+Note: You didn't use the -out option to save this plan, so OpenTofu can't
+guarantee to take exactly these actions if you run "tofu apply" now.
+```
+
+L’en-tête liste les symboles utilisés dans ce plan, ici seulement `+`. Vient ensuite une entrée par ressource, introduite par un commentaire qui donne son adresse et l’action prévue, puis le détail de ses attributs. Ce détail contient plus que ce qu’on a écrit. Le provider complète la ressource avec ses valeurs par défaut (`separator = "-"`, `file_permission = "0777"`) et avec les attributs qu’il calculera lui-même (`id`, les empreintes du contenu).
+
+`(known after apply)` marque une valeur qu’OpenTofu ne peut pas connaître avant d’agir. Pour `random_pet.name`, l'`id` est le nom aléatoire, qui n’existe pas encore. Pour le fichier, `content` dépend de ce nom, donc il est inconnu lui aussi, de même que toutes les empreintes calculées à partir du contenu. Le ch. 8 revient sur ces valeurs inconnues, qui expliquent beaucoup de comportements du plan.
+
+Les deux lignes `0777` méritent qu’on s’y arrête : sans indication contraire, le provider `local` crée le fichier avec les permissions `0777`, lecture, écriture et exécution pour tout le monde, que le `umask` du shell réduit ensuite. On y reviendra après l'`apply`.
+
+## `tofu apply`
+
+`tofu apply` recalcule le plan, l’affiche, et demande une confirmation :
+
+```console
+$ tofu apply
+...
+Plan: 2 to add, 0 to change, 0 to destroy.
+
+Do you want to perform these actions?
+  OpenTofu will perform the actions described above.
+  Only 'yes' will be accepted to approve.
+
+  Enter a value: yes
+
+random_pet.name: Creating...
+random_pet.name: Creation complete after 0s [id=certain-catfish]
+local_file.greeting: Creating...
+local_file.greeting: Creation complete after 0s [id=dcd26829af24a26679be591169b641757fd6b1a3]
+
+Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
+```
+
+Seul le mot `yes` vaut accord ; `y` ou `oui` annulent l’opération. Les créations suivent l’ordre des dépendances, le nom d’abord, le fichier ensuite. Le nom tiré est `certain-catfish`. L’identifiant du fichier, `dcd268...`, est l’empreinte SHA-1 de son contenu ; chaque provider choisit ce qu’il met dans `id`, et pour une ressource cloud ce sera l’identifiant attribué par le fournisseur.
+
+```console
+$ cat out/greeting.txt
+Hello from certain-catfish
+$ ls -l out
+total 4
+-rwxrwxr-x 1 romial romial 27 Oct 24 14:18 greeting.txt
+```
+
+Le fichier contient bien le nom, et il est exécutable (`rwx`), ce que le plan annonçait avec `0777`, réduit par le `umask` `002` du poste de test. Un fichier texte n’a aucune raison d’être exécutable ; on corrigera plus bas.
+
+L’option `-auto-approve` supprime la question. Elle est utile dans un pipeline qui applique un plan déjà relu, dangereuse au clavier, où elle fait sauter la seule relecture obligatoire.
+
+## Le state
+
+L'`apply` a créé un troisième fichier, `terraform.tfstate`. Il est assez court pour être lu en entier :
+
+```json title="terraform.tfstate"
+{
+  "version": 4,
+  "terraform_version": "1.13.2",
+  "serial": 1,
+  "lineage": "3ac19443-5dbd-6c31-d609-2bd9a11ce63d",
+  "outputs": {},
+  "resources": [
+    {
+      "mode": "managed",
+      "type": "local_file",
+      "name": "greeting",
+      "provider": "provider[\"registry.opentofu.org/hashicorp/local\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "content": "Hello from certain-catfish\n",
+            "content_base64": null,
+            "content_base64sha256": "4ONMY/a4AdfRgjwI9MJxj+RqgjYtmNvWK4zCRal3cNo=",
+            ...
+            "directory_permission": "0777",
+            "file_permission": "0777",
+            "filename": "./out/greeting.txt",
+            "id": "dcd26829af24a26679be591169b641757fd6b1a3",
+            "sensitive_content": null,
+            "source": null
+          },
+          "sensitive_attributes": [ ... ],
+          "dependencies": [
+            "random_pet.name"
+          ]
+        }
+      ]
+    },
+    {
+      "mode": "managed",
+      "type": "random_pet",
+      "name": "name",
+      "provider": "provider[\"registry.opentofu.org/hashicorp/random\"]",
+      "instances": [
+        {
+          "schema_version": 0,
+          "attributes": {
+            "id": "certain-catfish",
+            "keepers": null,
+            "length": 2,
+            "prefix": null,
+            "separator": "-"
+          },
+          "sensitive_attributes": []
+        }
+      ]
+    }
+  ],
+  "check_results": null
+}
+```
+
+En tête, `version` est la version du format de fichier (4), `terraform_version` la version de l’outil qui l’a écrit (le champ garde son nom pour la compatibilité), `serial` un compteur qui augmente à chaque écriture et `lineage` un identifiant tiré à la création du state, qui permet de reconnaître deux copies d’un même state. Chaque ressource est ensuite rangée avec son adresse (type et nom), le provider qui la gère, et la valeur de tous ses attributs au moment de la dernière opération. On y trouve le contenu du fichier en clair, et l’on comprend pourquoi un state qui décrit une base de données contiendra son mot de passe. Le champ `dependencies` garde les liens du graphe, pour que la destruction se fasse dans l’ordre inverse.
+
+C’est aussi là que vit le nom aléatoire. `random_pet` n’a rien créé hors d’OpenTofu ; son seul « objet réel » est cette valeur dans le state, et c’est pour cela qu’elle reste la même d’une exécution à l’autre, jusqu’à ce que la ressource soit remplacée.
+
+On ne lit pas le state au `cat` au quotidien. Deux commandes le présentent :
+
+```console
+$ tofu state list
+local_file.greeting
+random_pet.name
+$ tofu state show random_pet.name
+# random_pet.name:
+resource "random_pet" "name" {
+    id        = "certain-catfish"
+    length    = 2
+    separator = "-"
+}
+```
+
+Le ch. 7 est consacré au state, à sa structure et aux commandes qui le manipulent.
+
+<Figure svg={anatomy} num="3.1" alt="Liste des fichiers du projet : main.tf et versions.tf écrits par vous, à versionner ; .terraform/providers et .terraform.lock.hcl créés par tofu init, le premier à ignorer, le second à versionner ; terraform.tfstate, sa sauvegarde et out/greeting.txt créés par tofu apply, les deux premiers à ignorer ; perm.tfplan créé par tofu plan -out, à ignorer.">
+Les fichiers d’un projet après <code>init</code>, <code>apply</code> et <code>plan -out</code> : qui les écrit, et lesquels vont dans Git.
+</Figure>
+
+La colonne de gauche dit quelle commande écrit chaque fichier, celle de droite ce qu’on en fait dans Git. Deux fichiers seulement, en plus de votre code, se versionnent : vos `.tf` et le fichier de verrouillage. Le state, sa sauvegarde et les plans sauvegardés restent hors du dépôt, d’où le `.gitignore` donné au ch. 2.
+
+## Relancer, modifier, remplacer
+
+### Relancer sans rien changer
+
+```console
+$ tofu apply
+random_pet.name: Refreshing state... [id=certain-catfish]
+local_file.greeting: Refreshing state... [id=dcd26829af24a26679be591169b641757fd6b1a3]
+
+No changes. Your infrastructure matches the configuration.
+
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+```
+
+Avant de comparer, OpenTofu relit chaque ressource auprès de son provider (`Refreshing state`). Le provider `local` vérifie que le fichier existe et que son contenu correspond à celui du state ; le provider `random` n’a rien à relire. Aucune différence, aucune action.
+
+### Un attribut qui impose un remplacement
+
+On corrige les permissions du fichier en ajoutant un argument :
+
+```hcl title="labs/ch03/first-project/main.tf (ressource local_file)"
+resource "local_file" "greeting" {
+  filename = "${path.module}/out/greeting.txt"
+  content  = "Hello from ${random_pet.name.id}\n"
+
+  file_permission = "0644"
+}
+```
+
+C’est la version de `main.tf` qu’on trouve dans le dépôt.
+
+```console
+$ tofu plan
+...
+OpenTofu used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+-/+ destroy and then create replacement
+
+OpenTofu will perform the following actions:
+
+  # local_file.greeting must be replaced
+-/+ resource "local_file" "greeting" {
+      ~ content_base64sha256 = "4ONMY/a4AdfRgjwI9MJxj+RqgjYtmNvWK4zCRal3cNo=" -> (known after apply)
+      ...
+      ~ content_sha1         = "dcd26829af24a26679be591169b641757fd6b1a3" -> (known after apply)
+      ...
+      ~ file_permission      = "0777" -> "0644" # forces replacement
+      ~ id                   = "dcd26829af24a26679be591169b641757fd6b1a3" -> (known after apply)
+        # (3 unchanged attributes hidden)
+    }
+
+Plan: 1 to add, 0 to change, 1 to destroy.
+```
+
+Le provider `local` ne sait pas modifier un fichier en place : tout changement d’argument se traduit par la suppression du fichier et sa recréation. Le plan l’annonce par `-/+` et dit quel attribut l’impose (`# forces replacement`). Les flèches `->` montrent la valeur actuelle et la valeur prévue ; les attributs calculés repassent à `(known after apply)` puisque le fichier sera recréé. `random_pet.name` n’apparaît pas : le nom ne change pas.
+
+### Sauvegarder le plan avant de l’appliquer
+
+Entre un `tofu plan` relu et un `tofu apply`, la réalité ou la configuration peut changer, et `apply` recalcule alors un autre plan que celui qu’on a lu. La note en bas de chaque plan le rappelle. L’option `-out` enregistre le plan dans un fichier, et `tofu apply` appliqué à ce fichier exécute exactement ce plan, sans recalcul ni nouvelle question :
+
+```console
+$ tofu plan -out=perm.tfplan
+...
+Saved the plan to: perm.tfplan
+
+To perform exactly these actions, run the following command to apply:
+    tofu apply "perm.tfplan"
+$ file perm.tfplan
+perm.tfplan: Zip archive data, made by v2.0, extract using at least v2.0, last modified Oct 24 2026 14:19:32, uncompressed size 1358, method=deflate
+$ tofu apply perm.tfplan
+local_file.greeting: Destroying... [id=dcd26829af24a26679be591169b641757fd6b1a3]
+local_file.greeting: Destruction complete after 0s
+local_file.greeting: Creating...
+local_file.greeting: Creation complete after 0s [id=dcd26829af24a26679be591169b641757fd6b1a3]
+
+Apply complete! Resources: 1 added, 0 changed, 1 destroyed.
+$ ls -l out
+total 4
+-rw-r--r-- 1 romial romial 27 Oct 24 14:19 greeting.txt
+$ cat out/greeting.txt
+Hello from certain-catfish
+```
+
+Le fichier a été détruit puis recréé, avec les permissions `rw-r--r--` et le même contenu (d’où le même `id`, empreinte du contenu). Le nom est resté `certain-catfish`. Le plan sauvegardé est une archive zip qui contient la configuration, les valeurs et les actions ; il peut contenir des valeurs sensibles et ne se versionne pas.
+
+Un plan sauvegardé ne sert qu’une fois. Le réappliquer après que le state a changé est refusé :
+
+```console
+$ tofu apply perm.tfplan
+
+Error: Saved plan is stale
+
+The given plan file can no longer be applied because the state was changed by
+another operation after the plan was created.
+```
+
+C’est ce mécanisme que le ch. 33 utilise en intégration continue : le plan est calculé et relu dans la *pull request*, puis c’est ce fichier exact qui est appliqué après la fusion.
+
+### Une modification en place
+
+Le provider `local` remplace toujours ; pour voir le symbole `~`, il faut une ressource qui sache se modifier. `terraform_data` est une ressource intégrée à OpenTofu, sans provider à installer, qui ne crée rien hors du state et garde la valeur qu’on lui donne dans son argument `input`. On l’ajoute à `main.tf` :
+
+```hcl
+# A value kept only in the state, managed by OpenTofu itself (no provider).
+resource "terraform_data" "release" {
+  input = "v1"
+}
+```
+
+Après un `apply` qui la crée, on passe `input` à `"v2"` :
+
+```console
+$ tofu plan
+...
+  ~ update in-place (current -> planned)
+
+OpenTofu will perform the following actions:
+
+  # terraform_data.release will be updated in-place
+  ~ resource "terraform_data" "release" {
+        id     = "448e02b7-d6a2-7f42-5929-7cfab8188ab8"
+      ~ input  = "v1" -> "v2"
+      ~ output = "v1" -> (known after apply)
+    }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+L'`id` est conservé et compté dans `1 to change` : l’objet est modifié, pas recréé. Pour une ressource cloud, la différence a des conséquences concrètes. Changer les étiquettes d’une machine virtuelle EC2 se fait en place, sans coupure ; changer son image de démarrage la remplace, avec une nouvelle adresse IP publique et un disque racine recréé.
+
+```console
+$ tofu apply
+...
+terraform_data.release: Modifying... [id=448e02b7-d6a2-7f42-5929-7cfab8188ab8]
+terraform_data.release: Modifications complete after 0s [id=448e02b7-d6a2-7f42-5929-7cfab8188ab8]
+
+Apply complete! Resources: 0 added, 1 changed, 0 destroyed.
+```
+
+### Retirer une ressource de la configuration
+
+On supprime maintenant le bloc `terraform_data` de `main.tf`. La ressource est toujours dans le state, mais plus dans la configuration :
+
+```console
+$ tofu plan
+...
+  - destroy
+
+OpenTofu will perform the following actions:
+
+  # terraform_data.release will be destroyed
+  # (because terraform_data.release is not in configuration)
+  - resource "terraform_data" "release" {
+      - id     = "448e02b7-d6a2-7f42-5929-7cfab8188ab8" -> null
+      - input  = "v2" -> null
+      - output = "v2" -> null
+    }
+
+Plan: 0 to add, 0 to change, 1 to destroy.
+```
+
+Chaque attribut passe à `null`, et la raison est donnée entre parenthèses. Retirer un bloc détruit l’objet au prochain `apply` ; pour cesser de gérer un objet sans le détruire, il existe d’autres moyens, présentés au ch. 18.
+
+<Figure svg={planActions} num="3.2" alt="Arbre de décision. Si la ressource n’est pas dans la configuration : détruire. Si elle est dans la configuration mais pas dans le state ou n’existe plus : créer. Si aucun attribut ne diffère : rien. Si un attribut diffère et que le provider exige un remplacement : remplacer, sinon modifier en place.">
+Comment OpenTofu choisit le symbole de chaque ressource dans un plan.
+</Figure>
+
+L’arbre se lit de gauche à droite, une question par losange, pour chaque ressource connue de la configuration ou du state. Les quatre symboles de ce chapitre en sortent, avec sous chaque action l’exemple qui l’a produite. La dernière question n’appartient pas à OpenTofu : c’est le schéma du provider qui dit, attribut par attribut, si un changement peut se faire en place.
+
+## Une modification faite à la main
+
+On modifie le fichier sans passer par OpenTofu :
+
+```console
+$ echo 'edited by hand' > out/greeting.txt
+$ tofu plan
+random_pet.name: Refreshing state... [id=certain-catfish]
+local_file.greeting: Refreshing state... [id=dcd26829af24a26679be591169b641757fd6b1a3]
+
+OpenTofu used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+OpenTofu will perform the following actions:
+
+  # local_file.greeting will be created
+  + resource "local_file" "greeting" {
+      + content              = <<-EOT
+            Hello from certain-catfish
+        EOT
+      + directory_permission = "0777"
+      + file_permission      = "0644"
+      + filename             = "./out/greeting.txt"
+      ...
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+```
+
+Pendant la relecture, le provider `local` a constaté que le contenu du fichier ne correspond plus à celui du state, et il a déclaré la ressource disparue. Le plan propose donc de la créer, ce qui réécrira le fichier avec le contenu décrit. Chaque provider réagit à sa façon à une modification extérieure : celui-ci considère le fichier comme perdu, d’autres proposeront une modification en place (`~`) pour revenir à la valeur décrite. Dans tous les cas, l'`apply` fait gagner la configuration ; un `apply` rétablit le fichier.
+
+## Les fichiers `.tofu`
+
+OpenTofu lit aussi les fichiers d’extension `.tofu`, que Terraform ignore. Quand un fichier `.tofu` et un fichier `.tf` portent le même nom de base dans un dossier, OpenTofu ne charge que le `.tofu`[^files]. On le vérifie en copiant `main.tf` en `main.tofu` avec un autre message :
+
+```console
+$ sed 's/Hello from/Hi from/' main.tf > main.tofu
+$ tofu plan
+...
+  # local_file.greeting must be replaced
+      ~ content              = <<-EOT # forces replacement
+          - Hello from certain-catfish
+          + Hi from certain-catfish
+        EOT
+...
+Plan: 1 to add, 0 to change, 1 to destroy.
+```
+
+Le plan ne voit que la version de `main.tofu`. La même copie nommée `copy.tf` provoque une erreur, puisque OpenTofu charge alors les deux fichiers et trouve chaque ressource déclarée deux fois :
+
+```console
+$ tofu validate
+Error: Duplicate resource "random_pet" configuration
+
+  on main.tf line 2:
+   2: resource "random_pet" "name" {
+
+A random_pet resource named "name" was already declared at copy.tf:2,1-29.
+Resource names must be unique per type in each module.
+...
+```
+
+Ce mécanisme sert aux auteurs de modules qui veulent fonctionner avec les deux outils : un `versions.tofu` pour OpenTofu à côté d’un `versions.tf` pour Terraform, comme au ch. 2. Les TP du cours, qui ne visent qu’OpenTofu, s’en tiennent aux fichiers `.tf`.
+
+## `tofu destroy`
+
+```console
+$ tofu destroy
+...
+  # local_file.greeting will be destroyed
+  - resource "local_file" "greeting" {
+      - content              = <<-EOT
+            Hello from certain-catfish
+        EOT -> null
+      ...
+    }
+
+  # random_pet.name will be destroyed
+  - resource "random_pet" "name" {
+      ...
+    }
+
+Plan: 0 to add, 0 to change, 2 to destroy.
+
+Do you really want to destroy all resources?
+  OpenTofu will destroy all your managed infrastructure, as shown above.
+  There is no undo. Only 'yes' will be accepted to confirm.
+
+  Enter a value: yes
+
+local_file.greeting: Destroying... [id=dcd26829af24a26679be591169b641757fd6b1a3]
+local_file.greeting: Destruction complete after 0s
+random_pet.name: Destroying... [id=certain-catfish]
+random_pet.name: Destruction complete after 0s
+
+Destroy complete! Resources: 2 destroyed.
+```
+
+`tofu destroy` est un plan dont toutes les actions sont `-`, exécuté dans l’ordre inverse des dépendances : le fichier d’abord, le nom ensuite. Il reste ensuite dans le dossier :
+
+```console
+$ ls -la
+...
+drwxr-xr-x 3 romial romial 4096 Oct 24 14:16 .terraform
+-rw-r--r-- 1 romial romial 4243 Oct 24 14:16 .terraform.lock.hcl
+-rw-rw-r-- 1 romial romial  339 Oct 24 14:20 main.tf
+drwxrwxr-x 2 romial romial 4096 Oct 24 14:21 out
+-rw-rw-r-- 1 romial romial  181 Oct 24 14:21 terraform.tfstate
+-rw-rw-r-- 1 romial romial 2148 Oct 24 14:21 terraform.tfstate.backup
+-rw-rw-r-- 1 romial romial  266 Oct 24 14:15 versions.tf
+```
+
+Le state existe toujours, vide (181 octets, une liste `resources` vide et un `serial` qui a encore augmenté). `terraform.tfstate.backup` est la version précédente, celle qui contenait les deux ressources ; OpenTofu en garde une copie à chaque écriture du state local. Le dossier `out` est vide mais toujours là, car le provider `local` supprime le fichier qu’il gère et pas le dossier qu’il a créé pour l’y mettre. Ce genre de détail se retrouve chez tous les providers, et c’est une raison de plus de vérifier après un `destroy`, comme le fera `tools/check-cleanup.sh` sur AWS.
+
+:::cleanup
+Dans `labs/ch03/first-project`, après `tofu destroy` :
+
+```bash
+rm -rf .terraform out terraform.tfstate terraform.tfstate.backup perm.tfplan
+```
+
+Gardez `main.tf`, `versions.tf` et `.terraform.lock.hcl`.
+:::
+
+## Erreurs fréquentes
+
+:::trap[Répondre autre chose que `yes`]
+`apply` et `destroy` n’acceptent que `yes`. Toute autre réponse, même `y` ou `oui`, annule l’opération avec un simple `Apply cancelled.`, et la commande se termine avec le code de retour 0, comme si tout s’était bien passé. On croit avoir appliqué, et rien n’a changé.
+:::
+
+:::trap[Versionner le state ou le dossier `.terraform`]
+Le state contient la valeur de tous les attributs, mots de passe compris ; le dossier `.terraform` contient des liens ou des binaires de plusieurs centaines de mégaoctets. Ni l’un ni l’autre ne vont dans Git. À l’inverse, oublier de versionner `.terraform.lock.hcl` laisse chaque poste choisir sa propre version des providers.
+:::
+
+:::trap[Se fier aux valeurs par défaut sans les lire]
+Le plan affiche des attributs que l’on n’a pas écrits, comme `file_permission = "0777"`. Ce sont des valeurs choisies par le provider, et elles ne conviennent pas toujours. Lire le plan en entier, pas seulement le résumé, est le seul moyen de les voir avant qu’elles ne s’appliquent.
+:::
+
+:::trap[Réappliquer un plan sauvegardé ancien]
+Un fichier créé par `tofu plan -out` ne vaut que pour le state au moment du plan. Après un autre `apply`, il est refusé (`Saved plan is stale`) ; il faut recalculer le plan.
+:::
+
+## Exercices
+
+1. Après le premier `apply`, le nom `certain-catfish` est resté le même pendant tout le chapitre, malgré plusieurs `apply` et le remplacement du fichier. Où est-il conservé, et qu’est-ce qui le ferait changer ?
+2. Le fichier de verrouillage contient quinze empreintes `h1:` et quinze empreintes `zh:` par provider, alors que le poste de test est sous Linux x86_64. Pourquoi tant d’empreintes, et quelle différence entre les deux préfixes ?
+3. Pourquoi `tofu apply perm.tfplan` a-t-il fonctionné la première fois et refusé la seconde ?
+4. Exercice pratique. Partez de `labs/ch03/first-project` et ajoutez une ressource `random_integer` nommée `port` (arguments `min = 8000` et `max = 8999`), puis un second `local_file` nommé `config`, écrit dans `out/app.conf` avec les permissions `0644`, dont le contenu est `port = ` suivi du nombre tiré (attribut `result`). Prévoyez le résumé du plan avant de lancer `tofu apply`. Changez ensuite `max` en `8099` et prévoyez de nouveau le plan, ressource par ressource. Terminez par `tofu destroy`.
+
+## Corrigés
+
+**1.** Dans le state, comme attribut `id` de la ressource `random_pet.name`. Le provider `random` tire la valeur à la création de la ressource et ne la change plus : à chaque exécution, le nom est relu dans le state, pas recalculé. Il changerait si la ressource était remplacée, par exemple en modifiant `length` (un argument qui impose un remplacement), en détruisant puis recréant la ressource, ou en changeant une valeur de son argument `keepers`, prévu pour déclencher volontairement un nouveau tirage.
+
+**2.** Le registre publie le provider pour une quinzaine de plateformes (systèmes et processeurs), et OpenTofu enregistre les empreintes de toutes, pour que le même fichier de verrouillage serve à un collègue sous macOS ou à un pipeline sous Linux ARM. `zh:` est le SHA-256 de l’archive `.zip` publiée par le registre ; `h1:` est un SHA-256 calculé sur le contenu décompressé, qui permet aussi de vérifier un provider venu d’un miroir ou d’un cache.
+
+**3.** Un plan sauvegardé enregistre l’état du state au moment du calcul. La première fois, le state n’avait pas changé depuis, et le plan a été appliqué tel quel. Cet `apply` a lui-même modifié le state (le fichier recréé, un `serial` plus élevé) ; le plan décrivait donc un point de départ qui n’existait plus, et OpenTofu l’a refusé comme périmé (`Saved plan is stale`).
+
+**4.** Le code à ajouter :
+
+```hcl
+resource "random_integer" "port" {
+  min = 8000
+  max = 8999
+}
+
+resource "local_file" "config" {
+  filename        = "${path.module}/out/app.conf"
+  content         = "port = ${random_integer.port.result}\n"
+  file_permission = "0644"
+}
+```
+
+Sur un dossier vide, le plan crée quatre ressources (`Plan: 4 to add`) : le nom, l’entier, puis les deux fichiers, chacun après la ressource dont il dépend. Sur le poste de test, le tirage a donné `port = 8553`. Changer `max` impose de remplacer l’entier (`# forces replacement` sur `max`). Son nouveau `result` n’est pas connu avant l'`apply`, donc le contenu de `config` devient `(known after apply)`, ce qui impose à son tour de remplacer le fichier. Le nom et `greeting` ne bougent pas :
+
+```console
+$ tofu plan
+...
+  # local_file.config must be replaced
+      ~ content              = <<-EOT # forces replacement
+        EOT -> (known after apply) # forces replacement
+  # random_integer.port must be replaced
+      ~ max    = 8999 -> 8099 # forces replacement
+...
+Plan: 2 to add, 0 to change, 2 to destroy.
+```
+
+Après l'`apply`, le fichier contenait `port = 8065`. Le remplacement d’une ressource se propage ainsi à celles qui utilisent ses attributs, quand ces attributs changent.
+
+:::summary
+- Un projet est un dossier de fichiers `.tf` ; une ressource a un type, un nom local et une adresse `type.nom`.
+- `tofu init` installe les providers (dossier `.terraform`, à ignorer) et écrit `.terraform.lock.hcl` (versions et empreintes `h1:`/`zh:`, à versionner).
+- `tofu validate` vérifie la configuration sans rien contacter ; `tofu plan` calcule les actions sans agir.
+- `tofu apply` demande `yes` ; `-out` puis `tofu apply fichier` appliquent exactement le plan relu, une seule fois.
+- Le state (`terraform.tfstate`) garde tous les attributs en clair, plus `serial`, `lineage` et les dépendances ; `tofu state list` et `tofu state show` le lisent.
+- Symboles : `+` créer, `~` modifier en place, `-/+` remplacer (l’attribut fautif est marqué `forces replacement`), `-` détruire.
+- Le provider décide si un changement se fait en place ; un remplacement se propage aux ressources qui dépendent des attributs modifiés.
+- Un `X.tofu` masque le `X.tf` du même nom ; Terraform ne lit pas les `.tofu`.
+:::
+
+[^lock]: OpenTofu, « Dependency Lock File », sections *Checksum verification* et *Understanding Lock File Changes*, [https://opentofu.org/docs/language/files/dependency-lock/](https://opentofu.org/docs/language/files/dependency-lock/).
+[^files]: OpenTofu, « Files and Directories », section *Extension Precedence*, [https://opentofu.org/docs/language/files/](https://opentofu.org/docs/language/files/).

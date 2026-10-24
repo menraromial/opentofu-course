@@ -19,7 +19,7 @@ export const PARTS: Part[] = [
     title: 'Le langage et le moteur, sans cloud',
     summary: 'HCL, variables, providers, state et graphe de dépendances, sur des ressources qui vivent sur le poste.',
     chapters: [
-      {num: 3, title: 'Premier projet'},
+      {num: 3, title: 'Premier projet', doc: 'part-1/first-project'},
       {num: 4, title: 'La syntaxe HCL'},
       {num: 5, title: 'Variables, sorties et valeurs locales'},
       {num: 6, title: 'Les providers'},

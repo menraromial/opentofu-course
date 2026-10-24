@@ -12,6 +12,13 @@ const sidebars: SidebarsConfig = {
       link: {type: 'doc', id: 'part-0/index'},
       items: ['part-0/infrastructure-as-code'],
     },
+    {
+      type: 'category',
+      label: 'Partie 1 · Le langage et le moteur',
+      collapsed: false,
+      link: {type: 'doc', id: 'part-1/index'},
+      items: ['part-1/first-project'],
+    },
   ],
 };
 

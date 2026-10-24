@@ -32,7 +32,7 @@ Un script reste pourtant une suite d’ordres. Il dit comment aller d’un point
 
 ## Impératif et déclaratif
 
-Les deux démonstrations qui suivent utilisent Docker plutôt qu’un fournisseur cloud, pour qu’on puisse les relancer sans compte ni coût. Le raisonnement est le même pour un réseau virtuel AWS et une machine EC2. Vous n’avez pas besoin de les reproduire maintenant, car `tofu` n’est installé qu’au ch. 2 et le ch. 3 reprend la syntaxe ligne par ligne. Le code est dans le dossier [`labs/ch01`](https://github.com/menraromial/opentofu-course/tree/main/labs/ch01) du dépôt du cours si vous voulez le lancer plus tard.
+Les deux démonstrations qui suivent utilisent Docker plutôt qu’un fournisseur cloud, pour qu’on puisse les relancer sans compte ni coût. Le raisonnement est le même pour un réseau virtuel AWS et une machine EC2. Vous n’avez pas besoin de les reproduire maintenant, car `tofu` n’est installé qu’au ch. 2 et le [ch. 3](../part-1/first-project.mdx) reprend la syntaxe ligne par ligne. Le code est dans le dossier [`labs/ch01`](https://github.com/menraromial/opentofu-course/tree/main/labs/ch01) du dépôt du cours si vous voulez le lancer plus tard.
 
 ### Un script impératif
 
@@ -281,7 +281,7 @@ Le **plan** est la liste des actions qu’OpenTofu propose, calculée à partir 
 | Symbole | Action | Exemple dans ce chapitre |
 |---|---|---|
 | `+` | créer | les trois ressources au premier `apply`, le conteneur supprimé à la main |
-| `~` | modifier en place | (pas d’exemple ici ; le ch. 3 en montre un) |
+| `~` | modifier en place | (pas d’exemple ici ; le [ch. 3](../part-1/first-project.mdx) en montre un) |
 | `-/+` | détruire puis recréer | le conteneur dont le port publié change |
 | `-` | détruire | les trois ressources au `tofu destroy` |
 

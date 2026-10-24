@@ -1,0 +1,32 @@
+% The files of a project after init, apply and plan -out: who writes them,
+% and which ones go into Git.
+\documentclass[border=6pt]{standalone}
+\usepackage{tofu}
+\begin{document}
+\begin{tikzpicture}[papier,
+    f/.style={bloc=#1, minimum width=50mm, minimum height=8.5mm, text width=47mm, align=left, font=\ttfamily\footnotesize},
+    cmd/.style={font=\ttfamily\footnotesize\bfseries, text=Dink, anchor=east},
+    git/.style={font=\sffamily\scriptsize\bfseries, text=#1, anchor=west}]
+  % column of files
+  \node[f=Pvert] (main) {main.tf, versions.tf};
+  \node[f=Pbleu, below=3mm of main] (dot) {.terraform/providers/...};
+  \node[f=Pbleu, below=2mm of dot] (lock) {.terraform.lock.hcl};
+  \node[f=Pjaune, below=3mm of lock] (state) {terraform.tfstate};
+  \node[f=Pjaune, below=2mm of state] (backup) {terraform.tfstate.backup};
+  \node[f=Psable, below=2mm of backup] (out) {out/greeting.txt};
+  \node[f=Porange, below=3mm of out] (plan) {perm.tfplan};
+  % who writes
+  \node[cmd] at ([xshift=-6mm]main.west) {vous};
+  \node[cmd] at ([xshift=-6mm]$(dot.west)!0.5!(lock.west)$) {tofu init};
+  \node[cmd] at ([xshift=-6mm]$(state.west)!0.5!(out.west)$) {tofu apply};
+  \node[cmd] at ([xshift=-6mm]plan.west) {tofu plan -out};
+  % git or not
+  \node[git=Psapin] at ([xshift=6mm]main.east) {versionner};
+  \node[git=Pbrique] at ([xshift=6mm]dot.east) {ignorer (liens vers le cache)};
+  \node[git=Psapin] at ([xshift=6mm]lock.east) {versionner};
+  \node[git=Pbrique] at ([xshift=6mm]state.east) {ignorer (peut contenir des secrets)};
+  \node[git=Pbrique] at ([xshift=6mm]backup.east) {ignorer};
+  \node[git=Pgris] at ([xshift=6mm]out.east) {l'objet géré lui-même};
+  \node[git=Pbrique] at ([xshift=6mm]plan.east) {ignorer (archive zip)};
+\end{tikzpicture}
+\end{document}
