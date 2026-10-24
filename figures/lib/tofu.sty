@@ -1,0 +1,145 @@
+%% =====================================================================
+%%  tofu.sty: figures of the OpenTofu course
+%%
+%%  Loads the two registers of diagramme/ (installed in ~/texmf):
+%%    - diagramme.sty: icon architectures (soft, solid, group, pill, arr,
+%%      lbl, num, sequences, UML, graphs);
+%%    - papier.sty: mechanisms, pipelines, timelines (bloc, enclos, cadre,
+%%      fl, et, numn, tranche, temoin).
+%%  then maps all their colours to the palette of figures/palette.tsv.
+%%
+%%  Why: svgpost.py replaces every colour with a CSS variable so that the
+%%  figure follows the light or dark theme. xcolor mixes (Dblue!7, black!8)
+%%  produce hues outside the palette; they are replaced here by the named
+%%  backgrounds (DblueBg...). A forgotten hue makes svgpost.py fail.
+%% =====================================================================
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{tofu}[2026/10/24 Figures of the OpenTofu course]
+
+\RequirePackage{fontspec}
+\defaultfontfeatures{Ligatures=TeX}
+\setmainfont{Inter}[Extension=.otf, UprightFont=*-Regular,
+  BoldFont=*-SemiBold, ItalicFont=*-Italic, BoldItalicFont=*-SemiBoldItalic]
+\setsansfont{Inter}[Extension=.otf, UprightFont=*-Regular,
+  BoldFont=*-SemiBold, ItalicFont=*-Italic, BoldItalicFont=*-SemiBoldItalic]
+% no TeX ligatures in code: `--name` must stay two hyphens
+\defaultfontfeatures{}
+\setmonofont{JetBrainsMono}[Extension=.otf, UprightFont=*-Regular,
+  BoldFont=*-Bold, Scale=0.9]
+\newfontfamily\narrowfont{InterDisplay}[Extension=.otf,
+  UprightFont=*-Medium, BoldFont=*-SemiBold]
+
+\RequirePackage[nofonts]{diagramme}
+\RequirePackage[nofonts]{papier}
+
+% ---- palette ------------------------------------------------------------
+\input{tofu-colors.tex}
+% aliases: a single colour name per CSS variable
+\colorlet{Pencre}{Dink}
+\colorlet{Pgris}{Dcloud}
+\colorlet{Pfond}{DslateBg}
+\colorlet{Pciel}{DskyBg}
+\colorlet{Pbrique}{Dred}
+\colorlet{Pmarine}{Dblue}
+\colorlet{Psapin}{Dgreen}
+\colorlet{Qvert}{Dgreen}
+\colorlet{Qjaune}{Damber}
+\colorlet{Qrouge}{Dred}
+\colorlet{Qorange}{Dorange}
+\colorlet{Qbrun}{Pbrun}
+\colorlet{Qviolet}{Dpurple}
+\colorlet{Qmagenta}{Dpink}
+\colorlet{Qbleu}{Dblue}
+\colorlet{Qgris}{Dcloud}
+\color{Dink}
+% no hyphenation in figure labels
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+
+% ---- diagramme.sty without mixes or shadows ------------------------------
+\tikzset{
+  ombre/.style={},
+  solid/.style={draw=#1, fill=#1, text=white, line width=0.8pt,
+    rounded corners=3pt, font=\sffamily\bfseries, align=center,
+    inner sep=6pt, minimum height=10mm, minimum width=22mm},
+  soft/.style={draw=#1, fill=#1Bg, text=Dink, line width=1pt,
+    rounded corners=3pt, font=\sffamily, align=center,
+    inner sep=6pt, minimum height=10mm, minimum width=22mm},
+  group/.style={draw=#1, fill=DslateZ, rounded corners=6pt, line width=0.9pt,
+    inner sep=6.5mm},
+  groupd/.style={group=#1, dash pattern=on 4pt off 3pt},
+  pillo/.style={fill=white, draw=#1, line width=1pt, text=#1,
+    font=\sffamily\bfseries\small, rounded corners=3pt,
+    inner xsep=9pt, inner ysep=3pt},
+  lblc/.style={lbl, text=#1},
+  seqlife/.style={draw=#1, line width=0.7pt, dash pattern=on 2.5pt off 2.5pt},
+  seqact/.style={draw=#1, fill=#1Bg, line width=0.7pt},
+  umlclass/.style={rectangle split, rectangle split parts=3, draw=#1, line width=1pt,
+    rounded corners=2pt, rectangle split part fill={#1Bg, white, white},
+    align=left, rectangle split part align={center, left, left}, text=Dink,
+    font=\sffamily\scriptsize, inner sep=5pt, minimum width=34mm},
+  umlclassb/.style={rectangle split, rectangle split parts=2, draw=#1, line width=1pt,
+    rounded corners=2pt, rectangle split part fill={#1Bg, white},
+    align=left, rectangle split part align={center, left}, text=Dink,
+    font=\sffamily\scriptsize, inner sep=5pt, minimum width=32mm},
+  vtx/.style={circle, draw=#1, line width=1pt, fill=#1Bg, text=Dink,
+    font=\sffamily\small, minimum size=9mm, inner sep=1pt},
+  vtxhi/.style={circle, draw=#1, line width=1.1pt, fill=#1, text=white,
+    font=\sffamily\bfseries\small, minimum size=9mm, inner sep=1pt},
+}
+\renewcommand{\umltitle}[2][Dteal]{{\bfseries\color{#1}#2}}
+
+% ---- papier.sty without mixes --------------------------------------------
+\tikzset{
+  pile/.style={
+    general shadow={shadow xshift=2.4mm, shadow yshift=2.4mm, fill=#1,
+      draw=Dcloud, line width=0.6pt},
+    general shadow={shadow xshift=1.2mm, shadow yshift=1.2mm, fill=#1,
+      draw=Dcloud, line width=0.6pt}},
+  pile4/.style={
+    general shadow={shadow xshift=4.2mm, shadow yshift=4.2mm, fill=#1, draw=Dcloud, line width=0.5pt},
+    general shadow={shadow xshift=2.8mm, shadow yshift=2.8mm, fill=#1, draw=Dcloud, line width=0.5pt},
+    general shadow={shadow xshift=1.4mm, shadow yshift=1.4mm, fill=#1, draw=Dcloud, line width=0.5pt}},
+  cadred/.style={draw=Dink, line width=0.8pt, rounded corners=6pt,
+    dash pattern=on 3pt off 2pt, inner sep=3mm},
+  enclos/.style={draw=Dcloud, fill=#1, line width=0.7pt, rounded corners=4pt,
+    inner sep=2.5mm},
+  vecteur/.style={draw=#1, line width=4.5pt, -{Triangle[length=5mm, width=9mm]}},
+  vecteur/.default=Dcloud,
+  tranche/.style={draw=Dink, line width=0.6pt, fill=#1, outer sep=0pt,
+    inner sep=1pt, minimum height=6mm, font=\sffamily\scriptsize, align=center},
+  temoin/.style={draw=Dink, line width=0.5pt, fill=#1, minimum width=4.5mm,
+    minimum height=3mm, inner sep=0pt},
+}
+
+% ---- sequence diagrams: larger labels -------------------------------------
+% (figures are shown at column width, where the \scriptsize of diagramme.sty
+% becomes unreadable)
+\tikzset{
+  seqnote/.style={soft=Damber, font=\sffamily\footnotesize, align=center,
+    inner sep=4pt, minimum width=0pt, minimum height=0pt},
+}
+\RenewDocumentCommand{\seqmsg}{O{Dslate} m m m m m}{%
+  \draw[arr=#1] (#2 |- 0,#4) -- (#3 |- 0,#4)
+    node[midway, above=1.6pt, font=\sffamily\footnotesize, text=Dink]{#6};
+  \edef\seqnum{#5}\ifx\seqnum\empty\else\node[num=#1] at (#2 |- 0,#4) {#5};\fi}
+\RenewDocumentCommand{\seqret}{O{Dslate} m m m m}{%
+  \draw[darr=#1, line width=0.9pt] (#2 |- 0,#4) -- (#3 |- 0,#4)
+    node[midway, above=1.6pt, font=\sffamily\footnotesize, text=Dslate, fill=white,
+      inner sep=1pt]{#5};}
+\RenewDocumentCommand{\seqself}{O{Dslate} m m m}{%
+  \draw[arr=#1] (#2 |- 0,#3) -- ++(0.7,0) -- ++(0,-0.42) -- (#2 |- 0,{#3-0.42});
+  \node[anchor=west, font=\sffamily\footnotesize, text=Dink]
+    at ($(#2 |- 0,#3)+(1.0,-0.21)$) {#4};}
+
+% ---- course additions ----------------------------------------------------
+\tikzset{
+  % secondary text (annotations, units)
+  note/.style={font=\sffamily\scriptsize, text=Dslate, align=center, inner sep=1.5pt},
+  % axis or column label
+  axis/.style={font=\narrowfont\small, text=Dslate, inner sep=1.5pt},
+  % code or command inside a figure
+  code/.style={font=\ttfamily\footnotesize, text=Dink, inner sep=1.5pt},
+}
+
+\endinput

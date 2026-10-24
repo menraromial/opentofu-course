@@ -1,0 +1,36 @@
+% Imperative script versus declarative configuration: the script replays
+% orders without looking at what exists; OpenTofu compares the desired
+% result with what exists and derives the actions.
+\documentclass[border=6pt]{standalone}
+\usepackage{tofu}
+\begin{document}
+\begin{tikzpicture}[papier, node distance=6mm,
+    step/.style={bloc=#1, minimum width=66mm, minimum height=9mm, text width=58mm, align=left, inner xsep=4mm},
+    box/.style={bloc=#1, minimum width=40mm, minimum height=12mm, text width=37mm, align=center}]
+  % ---- left: imperative ------------------------------------------------
+  \node[font=\sffamily\bfseries] (lt) {Impératif : un script};
+  \node[step=Pbleu, below=5mm of lt] (s1) {\ttfamily docker network create ch01-net};
+  \node[step=Pbleu, below=of s1] (s2) {\ttfamily docker run -d --name ch01-web ...};
+  \node[numn] at (s1.west) {1};
+  \node[numn] at (s2.west) {2};
+  \draw[fl] (s1) -- (s2);
+  \node[box=Prose, below=11mm of s2, minimum width=66mm, text width=62mm] (err)
+    {2\textsuperscript{e} exécution\\[-1pt]{\scriptsize\ttfamily network with name ch01-net already exists}};
+  \draw[fl=Pbrique] (s2) -- node[etb=Pbrique, right] {on relance} (err);
+  \node[et=Pgris, below=2mm of err, text width=54mm]
+    {le script ignore ce qui existe déjà ;\\ il rejoue les ordres dans le même ordre};
+
+  % ---- right: declarative ----------------------------------------------
+  \node[font=\sffamily\bfseries, right=70mm of lt] (rt) {Déclaratif : OpenTofu};
+  \node[box=Pvert, below=5mm of rt, xshift=-24mm] (conf) {Configuration\\[-1pt]{\scriptsize ce qui doit exister}};
+  \node[box=Pjaune, below=5mm of rt, xshift=24mm] (real) {Infrastructure réelle\\[-1pt]{\scriptsize ce qui existe}};
+  \node[box=Plavande, below=26mm of rt] (cmp) {Comparaison};
+  \draw[fl] (conf.south) |- (cmp.west);
+  \draw[fl] (real.south) |- (cmp.east);
+  \node[box=Porange, below=9mm of cmp, minimum width=60mm, text width=57mm] (act)
+    {Actions déduites\\[-1pt]{\scriptsize\ttfamily + créer \quad \textasciitilde{} modifier \quad - détruire \quad (rien)}};
+  \draw[fl] (cmp) -- (act);
+  \node[et=Pgris, below=2mm of act, text width=62mm]
+    {relancer sans rien changer donne « No changes » ;\\ un objet supprimé à la main est recréé};
+\end{tikzpicture}
+\end{document}

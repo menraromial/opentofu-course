@@ -1,0 +1,24 @@
+# Dependencies (reinstalled by `npm ci`)
+node_modules/
+
+# Docusaurus build output (built by CI, never committed)
+build/
+.docusaurus/
+.cache-loader/
+
+# Intermediate LaTeX build of the figures (the SVGs in src/figures are committed)
+figures/build/
+
+# OpenTofu working files produced while testing the labs
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Local environment, editors, OS
+.env.local
+.vscode/
+.idea/
+.DS_Store
+__pycache__/

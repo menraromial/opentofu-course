@@ -1,0 +1,143 @@
+/* Home page: a framed title on a faint grid, then the full outline
+   (chapters still to come are greyed out). */
+.hero {
+  background-color: var(--tf-paper);
+  background-image:
+    linear-gradient(var(--tf-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tf-grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  border-bottom: 1px solid var(--tf-rule);
+  padding: 4.5rem 1.5rem 4rem;
+}
+.frame {
+  max-width: 54rem;
+  margin: 0 auto;
+  border: 1px solid var(--tf-rule-strong);
+  border-left: 6px solid var(--tf-accent);
+  background: var(--tf-plate);
+  padding: 2.4rem 2.6rem 2rem;
+}
+.kicker {
+  font-family: var(--tf-font-code);
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--tf-accent);
+  margin-bottom: 0.6rem;
+}
+.title {
+  font-size: clamp(2rem, 4.4vw, 3.1rem);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  margin-bottom: 1.2rem;
+}
+.lead {
+  font-size: 1.1rem;
+  max-width: 42rem;
+  color: var(--tf-ink-2);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.3rem;
+  margin-top: 1.6rem;
+  font-family: var(--tf-font-ui);
+}
+.button {
+  background: var(--tf-accent);
+  color: var(--tf-plate);
+  padding: 0.6rem 1.1rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.button:hover {
+  color: var(--tf-plate);
+  text-decoration: none;
+  filter: brightness(1.08);
+}
+.link {
+  font-size: 0.95rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+.status {
+  margin: 1.6rem 0 0;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--tf-rule);
+  font-family: var(--tf-font-code);
+  font-size: 0.8rem;
+  color: var(--tf-ink-2);
+}
+.statusAdd {
+  color: var(--tf-add);
+  font-weight: 650;
+}
+
+.main {
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+}
+.outline {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
+  gap: 2rem 2.4rem;
+}
+.part {
+  border-top: 2px solid var(--tf-rule-strong);
+  padding-top: 0.8rem;
+}
+.partHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 0.8rem;
+}
+.partHeader h2 {
+  font-size: 1.3rem;
+  margin: 0;
+}
+.partNum {
+  font-family: var(--tf-font-code);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--tf-accent);
+  white-space: nowrap;
+}
+.summary {
+  font-size: 0.94rem;
+  color: var(--tf-ink-2);
+  margin: 0.4rem 0 0.8rem;
+}
+.chapters {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-family: var(--tf-font-ui);
+  font-size: 0.87rem;
+}
+.chapters li {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.22rem 0;
+  border-bottom: 1px solid var(--tf-rule);
+}
+.marker {
+  font-family: var(--tf-font-code);
+  width: 0.7rem;
+  color: var(--tf-add);
+  font-weight: 700;
+}
+.chapterNum {
+  font-family: var(--tf-font-code);
+  font-size: 0.8rem;
+  color: var(--tf-accent);
+  min-width: 1.6rem;
+}
+.upcoming {
+  color: var(--tf-ink-2);
+  opacity: 0.6;
+}
+.upcoming .chapterNum,
+.upcoming .marker {
+  color: var(--tf-ink-2);
+}

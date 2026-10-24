@@ -1,0 +1,474 @@
+---
+title: L’infrastructure en code
+sidebar_label: 1. L’infrastructure en code
+description: Pourquoi décrire son infrastructure dans des fichiers, la différence entre un script et une configuration déclarative montrée sur un exemple exécuté, ce que fait OpenTofu à chaque exécution et d'où vient le projet.
+part: 0
+chapter: 1
+---
+
+import imperativeDeclarative from '@site/src/figures/iac-imperative-declarative.svg';
+import tofuLoop from '@site/src/figures/tofu-loop.svg';
+import historyTimeline from '@site/src/figures/history-timeline.svg';
+
+Deux environnements censés être identiques, une préproduction et une production, ont été montés à la main dans la console web d’un fournisseur cloud. L’application fonctionne dans l’un et pas dans l’autre. En cherchant, on découvre qu’une règle de pare-feu ouvre le port 5432 en production et pas en préproduction, que les deux bases n’ont pas la même version mineure de PostgreSQL, qu’une machine a 4 Go de mémoire au lieu de 8, et que personne ne sait qui a changé quoi, ni pourquoi. Pour reconstruire la préproduction à l’identique, il faudrait relire chaque écran de la console de production et refaire les mêmes clics.
+
+L’infrastructure en code (*infrastructure as code*, souvent abrégée IaC) traite ce problème en écrivant la description des serveurs, des réseaux, des bases de données et des droits d’accès dans des fichiers texte. Ces fichiers sont versionnés avec Git, relus avant d’être appliqués comme n’importe quel code, et un outil se charge de faire correspondre la réalité à ce qu’ils décrivent. OpenTofu est l’un de ces outils. La documentation du projet le définit comme un outil d’infrastructure en code qui permet de décrire des ressources dans le cloud ou sur site dans des fichiers de configuration lisibles, que l’on peut versionner, réutiliser et partager[^intro].
+
+## Ce que l’on fait sans infrastructure en code
+
+### La console web
+
+La console d’un fournisseur cloud est la manière la plus directe de créer une ressource. On remplit un formulaire, on clique sur « Créer », la machine démarre une minute plus tard. Pour une première découverte, c’est le bon outil. Le problème apparaît quand l’infrastructure doit durer, être modifiée par plusieurs personnes et exister en plusieurs exemplaires.
+
+Un clic ne laisse presque rien derrière lui. AWS enregistre bien chaque appel d’API dans son journal CloudTrail (qui a appelé quelle opération, à quelle heure), mais ce journal dit ce qui a été fait, pas ce qui aurait dû l’être. Il n’y a pas de version de référence à laquelle comparer la réalité, pas de relecture possible avant le changement, et la seule façon de reproduire un environnement est de refaire les mêmes gestes en espérant ne rien oublier.
+
+Avec le temps, deux environnements montés à la main s’écartent l’un de l’autre, et chacun s’écarte de ce que l’équipe croit qu’il contient. Cet écart entre l’état attendu et l’état réel s’appelle la **dérive** (*drift*). Martin Fowler a décrit en 2012 le résultat sous le nom de « serveur flocon de neige » (*snowflake server*), une machine unique, modifiée à la main au fil des interventions, que plus personne n’ose toucher parce que personne ne sait la reconstruire[^snowflake].
+
+### Les scripts
+
+L’étape suivante, que beaucoup d’équipes franchissent seules, consiste à remplacer les clics par des commandes. Le fournisseur propose un outil en ligne de commande (`aws`, `az`, `gcloud`), on écrit les commandes dans un script shell, on versionne le script. C’est un vrai progrès, puisque l’infrastructure est maintenant décrite dans un fichier qu’on peut relire et rejouer.
+
+Un script reste pourtant une suite d’ordres. Il dit comment aller d’un point de départ précis à un point d’arrivée, et il suppose que le point de départ est celui qu’il attend. Le plus simple pour voir ce que cela implique est de l’essayer.
+
+## Impératif et déclaratif
+
+Les deux démonstrations qui suivent utilisent Docker plutôt qu’un fournisseur cloud, pour qu’on puisse les relancer sans compte ni coût. Le raisonnement est le même pour un réseau virtuel AWS et une machine EC2. Vous n’avez pas besoin de les reproduire maintenant, car `tofu` n’est installé qu’au ch. 2 et le ch. 3 reprend la syntaxe ligne par ligne. Le code est dans le dossier [`labs/ch01`](https://github.com/menraromial/opentofu-course/tree/main/labs/ch01) du dépôt du cours si vous voulez le lancer plus tard.
+
+### Un script impératif
+
+Le script crée un réseau Docker, puis un conteneur nginx branché sur ce réseau et publié sur le port 8081 de la machine :
+
+```bash title="labs/ch01/imperative/create.sh"
+#!/usr/bin/env bash
+# Imperative version: each line is an order given to Docker, run in this order.
+set -euo pipefail
+
+docker network create ch01-net
+docker run -d --name ch01-web --network ch01-net -p 8081:80 nginx:1.29-alpine
+```
+
+Sa première exécution se passe bien. Docker affiche l’identifiant du réseau, puis celui du conteneur, et nginx répond :
+
+```console
+$ ./create.sh
+18077f321d51e13091d57241a5468d98bbfb1d830bb9be4a5f4cc74fa87dff62
+c64c67fd0d40bbdcd9f329b662d42c24bad8b63c896a92c47720f44664a8899c
+$ curl -s -o /dev/null -w 'HTTP %{http_code}\n' localhost:8081
+HTTP 200
+```
+
+On relance le même script, sans rien avoir changé :
+
+```console
+$ ./create.sh
+Error response from daemon: network with name ch01-net already exists
+```
+
+Le script s’arrête dès la première ligne, parce que le réseau existe déjà. L’erreur paraît bénigne ici, le résultat voulu étant déjà là. Le cas suivant l’est moins. Quelqu’un supprime le conteneur à la main, par erreur ou pour le redémarrer, puis relance le script pour remettre les choses en ordre :
+
+```console
+$ docker rm -f ch01-web
+ch01-web
+$ ./create.sh
+Error response from daemon: network with name ch01-net already exists
+$ docker ps --filter name=ch01
+NAMES     STATUS
+```
+
+Le conteneur n’est pas recréé. Le script échoue sur la commande qui crée le réseau, `set -e` l’arrête, et la seconde commande n’est jamais exécutée. L’infrastructure reste à moitié en place.
+
+On peut bien sûr corriger le script. Il suffit de tester l’existence du réseau avant de le créer (`docker network inspect ch01-net || docker network create ch01-net`), puis celle du conteneur. Mais si l’on veut ensuite passer le port de 8081 à 8082, le test d’existence ne suffit plus. Il faut lire le port du conteneur existant, le comparer à celui qu’on veut, et, s’il diffère, supprimer le conteneur et le recréer, parce que Docker ne sait pas changer le port publié d’un conteneur en marche. Il faudra recommencer pour l’image, les variables d’environnement, les volumes. À force de comparaisons, le script finit par contenir un petit moteur qui lit l’existant, le compare à une description et en déduit les commandes à lancer. Ce moteur, c’est précisément ce qu’est un outil déclaratif.
+
+### Une configuration déclarative
+
+Voici la même infrastructure décrite pour OpenTofu. Le fichier ne contient aucune commande. Il dit ce qui doit exister, à savoir un réseau, une image et un conteneur, et comment ces trois objets sont reliés.
+
+```hcl title="labs/ch01/declarative/main.tf"
+# Declarative version: the desired result, described once.
+terraform {
+  required_providers {
+    docker = {
+      source  = "kreuzwerker/docker"
+      version = "~> 4.6"
+    }
+  }
+}
+
+provider "docker" {}
+
+resource "docker_network" "ch01" {
+  name = "ch01-net"
+}
+
+resource "docker_image" "nginx" {
+  name         = "nginx:1.29-alpine"
+  keep_locally = true # destroy leaves the image in the local cache
+}
+
+resource "docker_container" "web" {
+  name  = "ch01-web"
+  image = docker_image.nginx.image_id
+
+  networks_advanced {
+    name = docker_network.ch01.name
+  }
+
+  ports {
+    internal = 80
+    external = 8081
+  }
+}
+```
+
+Le bloc `terraform` déclare le *provider* utilisé, le programme qui sait parler à Docker (ici `kreuzwerker/docker`, en version 4.6 ou supérieure dans la série 4[^docker-provider]). Chaque bloc `resource` décrit un objet, avec un type (`docker_container`) et un nom local (`web`) qui sert à y faire référence ailleurs dans le fichier. L’expression `docker_image.nginx.image_id` désigne l’identifiant de l’image décrite plus haut, et c’est grâce à cette référence qu’OpenTofu sait que le conteneur dépend de l’image.
+
+Après `tofu init`, qui télécharge le provider, la commande `tofu apply` calcule ce qu’il faut faire et le montre avant d’agir. Voici sa sortie, dont on a retiré les attributs qui ne seront connus qu’après la création :
+
+```console
+$ tofu apply
+
+OpenTofu used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+
+OpenTofu will perform the following actions:
+
+  # docker_container.web will be created
+  + resource "docker_container" "web" {
+      + must_run                                    = true
+      + name                                        = "ch01-web"
+      + network_mode                                = "bridge"
+      + restart                                     = "no"
+      + start                                       = true
+      ...
+      + networks_advanced {
+          + name           = "ch01-net"
+          ...
+        }
+
+      + ports {
+          + external = 8081
+          + internal = 80
+          + ip       = "0.0.0.0"
+          + protocol = "tcp"
+        }
+    }
+
+  # docker_image.nginx will be created
+  + resource "docker_image" "nginx" {
+      + keep_locally = true
+      + name         = "nginx:1.29-alpine"
+    }
+
+  # docker_network.ch01 will be created
+  + resource "docker_network" "ch01" {
+      + ipam_driver = "default"
+      + name        = "ch01-net"
+    }
+
+Plan: 3 to add, 0 to change, 0 to destroy.
+docker_network.ch01: Creating...
+docker_image.nginx: Creating...
+docker_image.nginx: Creation complete after 0s [id=sha256:812d47f806db...nginx:1.29-alpine]
+docker_network.ch01: Creation complete after 2s [id=d9acfe450ab3...]
+docker_container.web: Creating...
+docker_container.web: Creation complete after 0s [id=c597d952c074...]
+
+Apply complete! Resources: 3 added, 0 changed, 0 destroyed.
+```
+
+Les trois ressources apparaissent avec le symbole `+`, qui signifie « à créer ». Le résumé `Plan: 3 to add` les compte. Ensuite viennent les créations elles-mêmes, et leur ordre n’a rien d’arbitraire. Le réseau et l’image sont créés en même temps, puisque rien ne les relie, alors que le conteneur attend que les deux soient terminés, parce que sa configuration fait référence à l’un et à l’autre.
+
+On relance la même commande sans rien changer :
+
+```console
+$ tofu apply
+docker_network.ch01: Refreshing state... [id=d9acfe450ab3...]
+docker_image.nginx: Refreshing state... [id=sha256:812d47f806db...nginx:1.29-alpine]
+docker_container.web: Refreshing state... [id=c597d952c074...]
+
+No changes. Your infrastructure matches the configuration.
+
+Apply complete! Resources: 0 added, 0 changed, 0 destroyed.
+```
+
+Les lignes `Refreshing state` montrent qu’OpenTofu relit d’abord chaque objet existant auprès de Docker. Il compare ensuite ce qu’il a lu à la configuration, ne trouve aucune différence, et ne fait rien. On reproduit maintenant la suppression accidentelle qui avait mis le script en échec :
+
+```console
+$ docker rm -f ch01-web
+ch01-web
+$ tofu plan
+docker_image.nginx: Refreshing state... [id=sha256:812d47f806db...nginx:1.29-alpine]
+docker_network.ch01: Refreshing state... [id=d9acfe450ab3...]
+docker_container.web: Refreshing state... [id=c597d952c074...]
+
+OpenTofu will perform the following actions:
+
+  # docker_container.web will be created
+  + resource "docker_container" "web" {
+      + name                                        = "ch01-web"
+      ...
+    }
+
+Plan: 1 to add, 0 to change, 0 to destroy.
+```
+
+`tofu plan` fait le même calcul que `tofu apply` mais s’arrête avant d’agir. En relisant, OpenTofu a constaté que le conteneur n’existe plus. Le réseau et l’image sont toujours là, il ne propose donc de recréer que le conteneur. Un `tofu apply` le recrée, et nginx répond de nouveau sur le port 8081.
+
+Dernier essai, on modifie la configuration pour publier le conteneur sur le port 8082 au lieu de 8081 (`external = 8082`) et on demande le plan :
+
+```console
+$ tofu plan
+...
+  # docker_container.web must be replaced
+-/+ resource "docker_container" "web" {
+      ...
+      ~ ports {
+          ~ external = 8081 -> 8082 # forces replacement
+            # (3 unchanged attributes hidden)
+        }
+    }
+
+Plan: 1 to add, 0 to change, 1 to destroy.
+```
+
+OpenTofu sait, par le provider Docker, que le port publié d’un conteneur ne se modifie pas en place. Il annonce donc un remplacement (`-/+`, détruire puis recréer) et dit quel attribut l’impose (`# forces replacement`). C’est la comparaison qu’il aurait fallu écrire à la main dans le script, et elle vaut pour chacun des attributs de chacune des ressources. On remet le port à 8081 avant de continuer.
+
+:::cleanup
+Si vous avez lancé la démonstration, détruisez ce qu’elle a créé. Dans `labs/ch01/declarative` :
+
+```console
+$ tofu destroy
+...
+Plan: 0 to add, 0 to change, 3 to destroy.
+...
+Destroy complete! Resources: 3 destroyed.
+```
+
+`keep_locally = true` laisse l’image `nginx:1.29-alpine` dans le cache de Docker ; supprimez-la avec `docker rmi nginx:1.29-alpine` si vous ne voulez pas la garder. Pour la version script, `docker rm -f ch01-web` puis `docker network rm ch01-net`.
+:::
+
+### Ce que la comparaison montre
+
+<Figure svg={imperativeDeclarative} num="1.1" alt="À gauche, un script en deux commandes numérotées dont la seconde exécution échoue sur un réseau déjà existant. À droite, une configuration et l’infrastructure réelle entrent dans une comparaison qui produit des actions : créer, modifier, détruire ou rien.">
+Un script rejoue des ordres ; un outil déclaratif compare une description à l’existant et en déduit les actions.
+</Figure>
+
+La figure se lit de haut en bas dans chaque colonne. À gauche, le script n’a qu’une entrée, ses propres commandes, et il les exécute dans l’ordre sans regarder ce qui existe. À droite, l’outil a deux entrées, la configuration et l’infrastructure réelle, et les actions sortent de leur comparaison. Relancer la colonne de droite ne fait rien de plus quand tout est déjà en place.
+
+Cette dernière propriété porte un nom. Une opération est **idempotente** quand l’appliquer deux fois produit le même résultat que l’appliquer une fois. `tofu apply` l’est par construction, le script de départ ne l’était pas. Plus généralement, une approche **impérative** décrit le chemin (les commandes, dans l’ordre), une approche **déclarative** décrit la destination (ce qui doit exister) et laisse l’outil calculer le chemin depuis l’état présent. Le même fichier sert donc à créer l’infrastructure, à la réparer quand elle a dérivé et à la faire évoluer, ce qu’un script ne permet qu’au prix de toutes les vérifications décrites plus haut.
+
+L’approche déclarative a aussi ses limites, qu’il vaut mieux connaître dès maintenant. L’outil ne compare que ce que la configuration décrit. Un deuxième conteneur lancé à la main sous un autre nom n’apparaît dans aucun plan, puisque rien dans `main.tf` n’en parle. Et OpenTofu n’agit que lorsqu’on le lance. Entre deux exécutions, une modification faite à la main reste en place, sans alerte, jusqu’au prochain `plan`. Le ch. 37 montre comment lancer ce `plan` régulièrement pour détecter la dérive.
+
+## Ce que fait OpenTofu à chaque exécution
+
+Les sorties précédentes laissent deviner un mécanisme en quatre éléments. La figure 1.2 les met en place.
+
+<Figure svg={tofuLoop} num="1.2" alt="La commande tofu lit la configuration et le state, produit un plan, et passe par le provider, en gRPC, pour lire et créer les objets réels par leur API. Après apply, tofu écrit le nouvel état.">
+Ce que lit et écrit une exécution de <code>tofu apply</code>.
+</Figure>
+
+Les flèches pleines se lisent de gauche à droite. `tofu` lit la configuration et le state, interroge l’infrastructure réelle par l’intermédiaire du provider, puis produit le plan. La flèche en pointillés, en bas, est la dernière étape d’un `apply`, l’enregistrement du nouvel état une fois les objets créés ou modifiés.
+
+La **configuration** est l’ensemble des fichiers `.tf` d’un dossier. OpenTofu les lit tous, dans n’importe quel ordre, et les traite comme un seul document. Leur syntaxe, HCL (*HashiCorp Configuration Language*), fait l’objet du ch. 4.
+
+Le **state** (état) est un fichier JSON, `terraform.tfstate` par défaut, dans lequel OpenTofu note ce qu’il a créé. Sans lui, OpenTofu ne pourrait pas savoir que la ressource `docker_container.web` de la configuration correspond au conteneur Docker d’identifiant `c597d952c074...`, ni qu’il en est responsable. C’est ce fichier qui lui a permis, plus haut, de constater la disparition du conteneur : il savait qu’un conteneur de cet identifiant devait exister, l’a cherché et ne l’a pas trouvé. Le state contient aussi les valeurs de tous les attributs, y compris des mots de passe quand une ressource en a, ce qui en fait un fichier sensible. Le ch. 7 lui est consacré, les ch. 20 et 21 expliquent comment le partager et le chiffrer.
+
+Le **provider** est un programme séparé, téléchargé par `tofu init`, qui connaît une API particulière. Le provider Docker traduit « créer un `docker_container` » en appels à l’API du démon Docker ; le provider AWS traduit « créer une `aws_instance` » en appels à l’API EC2. `tofu` et le provider tournent dans deux processus distincts et dialoguent par gRPC, un protocole d’appel de procédure à distance. Cette séparation explique qu’OpenTofu puisse gérer n’importe quel service doté d’une API, à condition que quelqu’un ait écrit le provider correspondant. Le ch. 6 décrit les providers, le ch. 40 en écrit un.
+
+Le **plan** est la liste des actions qu’OpenTofu propose, calculée à partir des trois éléments précédents. Chaque ligne commence par un symbole :
+
+| Symbole | Action | Exemple dans ce chapitre |
+|---|---|---|
+| `+` | créer | les trois ressources au premier `apply`, le conteneur supprimé à la main |
+| `~` | modifier en place | (pas d’exemple ici ; le ch. 3 en montre un) |
+| `-/+` | détruire puis recréer | le conteneur dont le port publié change |
+| `-` | détruire | les trois ressources au `tofu destroy` |
+
+Pour calculer l’ordre des actions, OpenTofu construit un graphe de dépendances à partir des références entre ressources. Le conteneur fait référence à l’image et au réseau, il vient donc après eux, et deux ressources sans lien sont traitées en parallèle. C’est ce qu’on a vu dans la sortie du premier `apply`. Le ch. 8 décrit ce graphe.
+
+### Ce qui change d’un fournisseur à l’autre
+
+OpenTofu est souvent présenté comme un outil « multi-cloud ». C’est exact au sens où le même langage, les mêmes commandes, le même state et les mêmes modules servent pour AWS, Azure, Google Cloud, un fournisseur européen ou un cluster Kubernetes. Ce n’est pas exact au sens où une configuration écrite pour l’un fonctionnerait sur l’autre. Chaque provider définit ses propres types de ressources, qui reflètent les services du fournisseur. Une machine virtuelle s’écrit `aws_instance` chez AWS, `google_compute_instance` chez Google Cloud, `azurerm_linux_virtual_machine` chez Azure et `scaleway_instance_server` chez Scaleway, avec des attributs différents dans chaque cas.
+
+Ce cours fait ses travaux pratiques sur AWS. Ce qui relève d’OpenTofu (le langage, le state, le graphe, les modules, les tests, l’automatisation) s’applique tel quel ailleurs. Ce qui relève du provider AWS (les noms des ressources, l’authentification, le modèle de réseau) change, et chaque chapitre consacré à AWS se termine par un encadré qui donne les équivalents chez les autres fournisseurs, comme celui-ci.
+
+:::cloud
+Les quatre types de ressources cités plus haut, pour une machine virtuelle. Ces encadrés ne contiennent que des noms de ressources vérifiés dans la documentation de chaque provider ; aucun code n’y est exécuté.
+
+| Fournisseur | Provider | Machine virtuelle |
+|---|---|---|
+| AWS | `hashicorp/aws` | `aws_instance` |
+| Google Cloud | `hashicorp/google` | `google_compute_instance` |
+| Azure | `hashicorp/azurerm` | `azurerm_linux_virtual_machine` |
+| Scaleway | `scaleway/scaleway` | `scaleway_instance_server` |
+:::
+
+## OpenTofu parmi les autres outils
+
+OpenTofu n’est pas le seul outil d’infrastructure en code. Les autres se distinguent par trois questions : à quels services ils s’adressent, comment on écrit la description, et où est conservé l’état de ce qui a été créé.
+
+| Outil | Description écrite en | Services gérés | État conservé |
+|---|---|---|---|
+| OpenTofu, Terraform | HCL, déclaratif | tout service doté d’un provider | fichier de state, géré par l’utilisateur |
+| AWS CloudFormation | modèles JSON ou YAML | AWS seulement | par AWS (la pile, *stack*) |
+| Bicep | langage déclaratif propre | Azure seulement | par Azure, aucun fichier à gérer |
+| Pulumi | TypeScript, Python, Go, .NET, Java, YAML... | tout service doté d’un provider Pulumi | fichier ou service d’état Pulumi |
+| Ansible | playbooks YAML | machines (par SSH) et API | aucun ; l’outil inspecte à chaque exécution |
+| Crossplane | objets Kubernetes | tout service doté d’un provider Crossplane | objets dans le cluster Kubernetes |
+
+CloudFormation, lancé par AWS en février 2011, décrit des ressources AWS dans des modèles JSON ou YAML et les crée dans le bon ordre en tenant compte de leurs dépendances[^cfn]. L’état est tenu par AWS lui-même, ce qui dispense de gérer un fichier mais limite l’outil à un seul fournisseur. Bicep joue le même rôle pour Azure ; sa documentation insiste sur l’absence de fichier d’état, puisque « Azure stocke tous les états »[^bicep].
+
+Pulumi garde le modèle d’OpenTofu (des providers, un état, un plan avant d’agir) mais fait écrire la description dans un langage de programmation généraliste, TypeScript, Python, Go, .NET ou Java, ou bien en YAML[^pulumi]. On gagne les boucles, les fonctions et les tests du langage ; on perd la lecture immédiate d’un fichier qui ne fait que décrire.
+
+Ansible vient d’une autre famille, la gestion de configuration. Il se connecte aux machines par SSH, sans agent installé sur elles, et y applique des playbooks écrits en YAML ; sa documentation précise que lorsqu’une machine est déjà dans l’état décrit, Ansible ne change rien, même si le playbook est relancé[^ansible]. Ansible sait aussi appeler des API cloud, mais il ne garde pas d’état, si bien qu’il ne sait pas ce qu’il a créé lors d’une exécution précédente. Supprimer une ressource de la description ne la détruit pas.
+
+Crossplane, enfin, transforme un cluster Kubernetes en plan de contrôle. Les ressources cloud y sont des objets Kubernetes, et des contrôleurs les surveillent en permanence ; si la réalité s’écarte de la description, le contrôleur corrige l’écart de lui-même[^crossplane]. C’est la différence la plus nette avec OpenTofu, qui ne compare et ne corrige que lorsqu’on le lance.
+
+Cette comparaison fait apparaître deux métiers. **Provisionner**, c’est créer les ressources elles-mêmes (le réseau, la machine virtuelle, la base de données, le bucket de stockage). **Configurer**, c’est préparer l’intérieur d’une machine (installer des paquets, écrire des fichiers de configuration, démarrer des services). OpenTofu est fait pour provisionner. Pour la configuration, on lui associe un script de démarrage exécuté au premier boot de la machine (le ch. 11 utilise `user_data` et cloud-init), une image préparée à l’avance, ou un outil comme Ansible. Vouloir tout faire avec OpenTofu mène aux *provisioners*, que sa propre documentation présente comme un dernier recours[^provisioners].
+
+## D’où vient OpenTofu
+
+OpenTofu est né en 2023 d’une copie (*fork*) du code de Terraform, l’outil créé par HashiCorp. Les deux projets partagent donc leur langage, leurs fichiers et une bonne partie de leur fonctionnement, ce qui explique qu’on parle indifféremment de « Terraform » pour désigner la technique. La figure 1.3 reprend les dates.
+
+<Figure svg={historyTimeline} num="1.3" alt="Frise chronologique de février 2011 à avril 2025 : CloudFormation, Terraform 0.1, passage de HashiCorp en BSL, manifeste OpenTF, OpenTofu à la Linux Foundation, Terraform 1.6.0 sous BSL, OpenTofu 1.6.0, OpenTofu 1.7, rachat de HashiCorp par IBM, entrée d’OpenTofu à la CNCF.">
+De CloudFormation à l’entrée d’OpenTofu à la CNCF. En vert les étapes d’OpenTofu, en rouge celles de la licence de Terraform.
+</Figure>
+
+La frise se lit de gauche à droite, les événements étant alternés au-dessus et au-dessous de l’axe pour rester lisibles. Les points rouges marquent les deux étapes du changement de licence de Terraform, l’annonce puis la première version publiée sous la nouvelle licence ; les points verts, ce qui en a découlé pour OpenTofu.
+
+Mitchell Hashimoto annonce Terraform 0.1 le 28 juillet 2014, comme un outil pour construire, combiner et lancer une infrastructure de manière sûre et efficace, capable de la décrire en code même quand elle s’étend sur plusieurs fournisseurs[^tf01]. L’annonce montre une même configuration qui combine DigitalOcean, DNSimple et Heroku. Le code est publié sous licence MPL 2.0 (*Mozilla Public License*), une licence libre. Pendant neuf ans, une large communauté écrit des providers et des modules, et de nombreuses entreprises bâtissent des services autour de Terraform.
+
+Le 10 août 2023, HashiCorp annonce que les versions futures de ses produits passeront sous BSL 1.1 (*Business Source License*). La copie, la modification, la redistribution et l’usage commercial restent permis, sauf pour proposer une offre concurrente de celles de HashiCorp ; l’annonce précise que les éditeurs de services concurrents bâtis sur ces produits ne pourront plus intégrer les versions, correctifs et correctifs de sécurité futurs[^bsl]. Les fichiers de licence du dépôt de Terraform montrent la frontière exacte : la version 1.5.7, publiée le 7 septembre 2023, est la dernière sous MPL 2.0, et la version 1.6.0, publiée le 4 octobre 2023, la première sous BSL[^tflicense].
+
+Le 15 août 2023, un groupe d’entreprises et de contributeurs publie le manifeste OpenTF, qui demande à HashiCorp de revenir à une licence libre et annonce un fork si elle ne le fait pas[^manifesto]. HashiCorp ne revient pas sur sa décision. Le fork part du dernier code publié sous MPL 2.0, prend le nom d’OpenTofu, et la Linux Foundation annonce le 20 septembre 2023 qu’elle l’accueille, avec des engagements de soutien de plus de 140 organisations et 600 personnes[^lf]. La première version stable, OpenTofu 1.6.0, sort le 10 janvier 2024[^ga].
+
+Depuis, les deux projets évoluent séparément. HashiCorp a été rachetée par IBM, opération achevée le 27 février 2025[^ibm]. OpenTofu a été accepté à la CNCF (*Cloud Native Computing Foundation*, la fondation qui héberge aussi Kubernetes) le 23 avril 2025, au niveau de maturité *sandbox*[^cncf]. Sa licence reste la MPL 2.0, et sa version stable au moment où ce cours est écrit est la 1.13.2, publiée le 21 octobre 2026[^release].
+
+### Ce qui est commun et ce qui diverge
+
+Une configuration écrite pour Terraform avant le fork fonctionne avec OpenTofu. Le langage est le même, les fichiers s’appellent toujours `.tf`, le bloc de configuration de l’outil s’appelle toujours `terraform { ... }` (le mot est resté pour la compatibilité), et les providers sont les mêmes programmes. Le provider `hashicorp/aws` qu’utilise ce cours est distribué par le registre d’OpenTofu (`registry.opentofu.org`) comme par celui de Terraform (`registry.terraform.io`).
+
+Les différences apparaissent dans les fonctions ajoutées après le fork. Certaines n’existent que dans OpenTofu, et le cours les utilise quand elles servent :
+
+| Version d’OpenTofu | Date | Fonction propre à OpenTofu | Chapitre |
+|---|---|---|---|
+| 1.7 | 30 avril 2024 | chiffrement du state et du plan | 21 |
+| 1.8 | 29 juillet 2024 | variables utilisables dans le bloc `backend` et les sources de modules ; fichiers `.tofu` | 5, 22 |
+| 1.9 | 9 janvier 2025 | `for_each` sur les blocs `provider` ; option `-exclude` | 27, 37 |
+| 1.11 | 9 décembre 2025 | méta-argument `enabled` | 12 |
+
+Les sources sont les notes de version de chaque version[^v17] [^v18] [^v19] [^v111]. D’autres fonctions arrivent dans les deux outils à des dates différentes. Les valeurs éphémères, qui ne sont jamais écrites dans le state, apparaissent dans Terraform 1.10 le 27 novembre 2024[^tf110], puis dans OpenTofu 1.11[^v111]. Terraform a de son côté des fonctions liées à HCP Terraform, le service en ligne de HashiCorp, que ce cours n’aborde pas.
+
+### Pourquoi ce cours utilise OpenTofu
+
+OpenTofu est sous licence libre, gouverné par une fondation, et compatible avec l’essentiel de ce qui s’écrit pour Terraform. Tout ce que vous apprendrez ici s’applique à Terraform en remplaçant la commande `tofu` par `terraform`, sauf les fonctions propres à OpenTofu du tableau précédent, signalées chaque fois qu’elles apparaissent. Terraform 1.16 est installé sur le poste qui a servi à tester le cours ; le ch. 38 l’utilise pour faire passer un projet d’un outil à l’autre et revenir.
+
+## Erreurs fréquentes
+
+:::trap[Modifier à la main ce qu’OpenTofu gère]
+Changer dans la console un attribut d’une ressource décrite dans la configuration (un port, une taille de machine, une règle de pare-feu) crée une dérive. Le `tofu apply` suivant remet la valeur décrite dans les fichiers, ou recrée la ressource si l’attribut ne se modifie pas en place, ce qui peut effacer une correction d’urgence faite à la main. Une correction faite dans la console doit être reportée dans la configuration aussitôt.
+:::
+
+:::trap[Croire que le code devient portable d’un fournisseur à l’autre]
+OpenTofu gère tous les fournisseurs avec le même outil, mais une configuration écrite pour AWS ne crée rien chez Azure. Seuls les concepts, la méthode et les modules bien découpés se transposent ; le ch. 35 montre jusqu’où l’on peut aller.
+:::
+
+:::trap[Lire « No changes » comme « tout est conforme »]
+« No changes » signifie que les ressources décrites dans la configuration correspondent à la réalité. Ce qui a été créé à côté, à la main ou par un autre outil, n’est pas regardé.
+:::
+
+:::trap[Configurer l’intérieur des machines avec OpenTofu]
+Installer des paquets ou modifier des fichiers sur une machine par des *provisioners* fonctionne, mais OpenTofu ne sait ni vérifier ni corriger ce qui a été fait ainsi. On réserve OpenTofu au provisionnement et on confie la configuration à cloud-init, à une image préparée ou à un outil de gestion de configuration.
+:::
+
+## Exercices
+
+1. Expliquez pourquoi le script `create.sh` ne recrée pas le conteneur supprimé à la main, alors que `tofu apply` le fait. Quelle information OpenTofu possède-t-il que le script n’a pas ?
+2. Dans la sortie du premier `tofu apply`, le réseau et l’image sont créés en même temps, puis le conteneur. Qu’est-ce qui, dans `main.tf`, impose cet ordre ? Que se passerait-il si l’on écrivait `image = "nginx:1.29-alpine"` dans le conteneur au lieu de `docker_image.nginx.image_id` ?
+3. Parmi les outils du tableau, lequel corrige une dérive sans qu’on le lance ? Que faut-il faire avec OpenTofu pour seulement la détecter ?
+4. Exercice pratique (une fois `tofu` installé au ch. 2). Appliquez la configuration de `labs/ch01/declarative`. Ajoutez un second conteneur `ch01-web2`, sur le même réseau et la même image, publié sur le port 8083. Avant de lancer `tofu plan`, écrivez le résumé (`Plan: ...`) que vous attendez, puis vérifiez. Retirez ensuite le bloc que vous venez d’ajouter et prévoyez de nouveau le résumé. Terminez par `tofu destroy`.
+
+## Corrigés
+
+**1.** Le script ne connaît que ses commandes. Il ne regarde pas ce qui existe, et la première commande échoue parce que le réseau est déjà là ; `set -e` arrête alors le script avant la création du conteneur. OpenTofu, lui, possède le state, qui lui dit quels objets il a créés et sous quels identifiants. Avant de calculer le plan, il relit chacun de ces objets auprès de Docker (les lignes `Refreshing state`), constate que le conteneur a disparu et propose de ne recréer que lui, puisque le réseau et l’image sont toujours conformes.
+
+**2.** L’ordre vient des références. Le conteneur contient `docker_image.nginx.image_id` et `docker_network.ch01.name`, deux valeurs qui n’existent qu’une fois l’image et le réseau créés. OpenTofu en déduit deux dépendances et attend. Le réseau et l’image ne se référencent pas, ils peuvent donc être créés en parallèle. Avec `image = "nginx:1.29-alpine"` écrit en dur, le lien entre le conteneur et la ressource `docker_image.nginx` disparaît, et OpenTofu peut lancer les deux créations en même temps. Le conteneur se crée quand même, car le provider Docker télécharge lui-même une image absente du cache (un essai avec une image absente a pris 42 secondes au lieu de 0). Mais ce téléchargement n’est plus une ressource suivie par OpenTofu. L’image n’apparaît pas dans le state, et `tofu destroy` la laisse sur la machine. La dépendance envers le réseau, elle, reste en place.
+
+**3.** Crossplane, dont les contrôleurs surveillent les ressources en permanence et corrigent tout écart. OpenTofu n’agit que lorsqu’on le lance. Pour détecter une dérive sans la corriger, on lance `tofu plan` (ou `tofu plan -refresh-only`, présenté au ch. 7) et on lit le résultat ; le ch. 37 automatise ce contrôle.
+
+**4.** Le bloc à ajouter reprend celui de `web` avec un autre nom local, un autre nom de conteneur et un autre port :
+
+```hcl
+resource "docker_container" "web2" {
+  name  = "ch01-web2"
+  image = docker_image.nginx.image_id
+
+  networks_advanced {
+    name = docker_network.ch01.name
+  }
+
+  ports {
+    internal = 80
+    external = 8083
+  }
+}
+```
+
+Le réseau et l’image existent déjà et ne changent pas ; seul le nouveau conteneur est à créer :
+
+```console
+$ tofu plan
+...
+  # docker_container.web2 will be created
+...
+Plan: 1 to add, 0 to change, 0 to destroy.
+```
+
+Après `tofu apply`, nginx répond sur les ports 8081 et 8083. Une fois le bloc retiré, la ressource figure toujours dans le state mais plus dans la configuration, et OpenTofu propose de la détruire en donnant la raison :
+
+```console
+$ tofu plan
+...
+  # docker_container.web2 will be destroyed
+  # (because docker_container.web2 is not in configuration)
+...
+Plan: 0 to add, 0 to change, 1 to destroy.
+```
+
+C’est la seconde moitié de l’approche déclarative : retirer une ressource de la description suffit à la faire détruire. `tofu destroy` supprime ensuite tout ce que le state contient encore.
+
+:::summary
+- L’infrastructure en code décrit l’infrastructure dans des fichiers versionnés, relus et appliqués par un outil.
+- Une approche impérative (script) décrit le chemin ; une approche déclarative décrit la destination et l’outil calcule le chemin depuis l’état présent.
+- `tofu apply` est idempotent : relancé sans changement, il répond « No changes ».
+- OpenTofu combine quatre éléments : la configuration (`*.tf`), le state, le provider (un plugin qui parle à une API, en gRPC avec `tofu`) et le plan.
+- Symboles du plan : `+` créer, `~` modifier en place, `-/+` remplacer, `-` détruire.
+- OpenTofu ne compare que ce que la configuration décrit, et seulement quand on le lance.
+- Le langage et la méthode sont communs à tous les fournisseurs ; les types de ressources sont propres à chaque provider.
+- OpenTofu est le fork libre (MPL 2.0) de Terraform, né du passage de Terraform sous BSL en 2023, stable depuis la 1.6.0 (janvier 2024), à la CNCF depuis avril 2025.
+:::
+
+[^intro]: OpenTofu, « What is OpenTofu? », documentation officielle, [https://opentofu.org/docs/intro/](https://opentofu.org/docs/intro/).
+[^snowflake]: Martin Fowler, « SnowflakeServer », 10 juillet 2012, [https://martinfowler.com/bliki/SnowflakeServer.html](https://martinfowler.com/bliki/SnowflakeServer.html).
+[^docker-provider]: Provider `kreuzwerker/docker`, version 4.6.0 utilisée dans ce chapitre, [https://search.opentofu.org/provider/kreuzwerker/docker/latest](https://search.opentofu.org/provider/kreuzwerker/docker/latest).
+[^cfn]: AWS, « Introducing AWS CloudFormation », 25 février 2011, [https://aws.amazon.com/about-aws/whats-new/2011/02/25/introducing-aws-cloudformation/](https://aws.amazon.com/about-aws/whats-new/2011/02/25/introducing-aws-cloudformation/).
+[^bicep]: Microsoft, « What is Bicep? », section *No state or state files to manage*, [https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/overview](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/overview).
+[^pulumi]: Pulumi, « Languages & SDKs », [https://www.pulumi.com/docs/iac/languages-sdks/](https://www.pulumi.com/docs/iac/languages-sdks/).
+[^ansible]: Ansible, « Introduction to Ansible », [https://docs.ansible.com/ansible/latest/getting_started/introduction.html](https://docs.ansible.com/ansible/latest/getting_started/introduction.html).
+[^provisioners]: OpenTofu, « Provisioners », section *Provisioners are a Last Resort*, [https://opentofu.org/docs/language/resources/provisioners/syntax/](https://opentofu.org/docs/language/resources/provisioners/syntax/).
+[^crossplane]: Crossplane, « What’s Crossplane? », [https://docs.crossplane.io/latest/whats-crossplane/](https://docs.crossplane.io/latest/whats-crossplane/).
+[^tf01]: Mitchell Hashimoto, « HashiCorp Terraform », 28 juillet 2014, [https://www.hashicorp.com/en/blog/terraform-announcement](https://www.hashicorp.com/en/blog/terraform-announcement).
+[^bsl]: HashiCorp, « HashiCorp adopts Business Source License », 10 août 2023, [https://www.hashicorp.com/en/blog/hashicorp-adopts-business-source-license](https://www.hashicorp.com/en/blog/hashicorp-adopts-business-source-license).
+[^tflicense]: Fichiers de licence du dépôt `hashicorp/terraform` aux étiquettes [`v1.5.7`](https://github.com/hashicorp/terraform/blob/v1.5.7/LICENSE) (MPL 2.0) et [`v1.6.0`](https://github.com/hashicorp/terraform/blob/v1.6.0/LICENSE) (BSL 1.1) ; dates de publication relevées sur la page des versions du dépôt.
+[^manifesto]: InfoQ, « OpenTF Foundation Released OpenTF Manifesto », 31 août 2023, [https://www.infoq.com/news/2023/08/opentf-manifesto-terraform/](https://www.infoq.com/news/2023/08/opentf-manifesto-terraform/).
+[^lf]: Linux Foundation, « Linux Foundation Launches OpenTofu: A New Open Source Alternative to Terraform », 20 septembre 2023, [https://www.linuxfoundation.org/press/announcing-opentofu](https://www.linuxfoundation.org/press/announcing-opentofu).
+[^ga]: OpenTofu, « OpenTofu is going GA », 10 janvier 2024, [https://opentofu.org/blog/opentofu-is-going-ga/](https://opentofu.org/blog/opentofu-is-going-ga/).
+[^ibm]: HashiCorp, « HashiCorp officially joins the IBM family », 27 février 2025, [https://www.hashicorp.com/en/blog/hashicorp-officially-joins-the-ibm-family](https://www.hashicorp.com/en/blog/hashicorp-officially-joins-the-ibm-family).
+[^cncf]: CNCF, page du projet OpenTofu, [https://www.cncf.io/projects/opentofu/](https://www.cncf.io/projects/opentofu/).
+[^release]: OpenTofu, version 1.13.2, [https://github.com/opentofu/opentofu/releases/tag/v1.13.2](https://github.com/opentofu/opentofu/releases/tag/v1.13.2).
+[^v17]: OpenTofu, « OpenTofu 1.7.0 is out with State Encryption, Dynamic Provider-Defined Functions, and more », [https://opentofu.org/blog/opentofu-1-7-0/](https://opentofu.org/blog/opentofu-1-7-0/).
+[^v18]: OpenTofu, notes de la version 1.8.0, [https://github.com/opentofu/opentofu/releases/tag/v1.8.0](https://github.com/opentofu/opentofu/releases/tag/v1.8.0).
+[^v19]: OpenTofu, notes de la version 1.9.0, [https://github.com/opentofu/opentofu/releases/tag/v1.9.0](https://github.com/opentofu/opentofu/releases/tag/v1.9.0).
+[^v111]: OpenTofu, notes de la version 1.11.0, [https://github.com/opentofu/opentofu/releases/tag/v1.11.0](https://github.com/opentofu/opentofu/releases/tag/v1.11.0).
+[^tf110]: HashiCorp, notes de la version 1.10.0 de Terraform, [https://github.com/hashicorp/terraform/releases/tag/v1.10.0](https://github.com/hashicorp/terraform/releases/tag/v1.10.0).

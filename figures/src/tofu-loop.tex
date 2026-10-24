@@ -1,0 +1,22 @@
+% What one `tofu apply` reads and writes: configuration, state, real
+% infrastructure through the provider, the plan in between.
+\documentclass[border=6pt]{standalone}
+\usepackage{tofu}
+\begin{document}
+\begin{tikzpicture}[papier,
+    box/.style={bloc=#1, minimum width=36mm, minimum height=13mm, text width=33mm, align=center}]
+  \node[box=Pvert] (conf) {Configuration\\[-1pt]{\scriptsize\ttfamily *.tf}};
+  \node[box=Pbleu, below=14mm of conf] (state) {State\\[-1pt]{\scriptsize\ttfamily terraform.tfstate}};
+  \node[box=Plavande, right=22mm of conf, yshift=-13.5mm, minimum height=22mm] (core)
+    {\ttfamily tofu\\[2pt]{\sffamily\scriptsize construit le graphe,\\ compare, planifie}};
+  \node[box=Porange, right=20mm of core, yshift=13.5mm] (plan) {Plan\\[-1pt]{\scriptsize\ttfamily + \ \textasciitilde{} \ -/+ \ -}};
+  \node[box=Psable, right=20mm of core, yshift=-13.5mm] (prov) {Provider\\[-1pt]{\scriptsize plugin : docker, aws...}};
+  \node[box=Pjaune, right=18mm of prov] (real) {Infrastructure\\ réelle};
+  \draw[fl] (conf.east) -- node[et, above, sloped] {lit} (core.north west);
+  \draw[fl] (state.east) -- node[et, below, sloped] {lit} (core.south west);
+  \draw[fl] (core.north east) -- node[et, above, sloped] {produit} (plan.west);
+  \draw[flbi] (core.south east) -- node[et, below, sloped] {gRPC} (prov.west);
+  \draw[flbi] (prov) -- node[et, above] {API} node[et, below] {lit, crée} (real);
+  \draw[fld=Pbrun] (core.south) -- ++(0,-12mm) -| node[etb=Pbrun, pos=0.25, below] {après apply, tofu écrit le nouvel état} (state.south);
+\end{tikzpicture}
+\end{document}

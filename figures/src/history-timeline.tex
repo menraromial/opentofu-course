@@ -1,0 +1,32 @@
+% From CloudFormation to OpenTofu 1.13: the dated events of chapter 1.
+\documentclass[border=6pt]{standalone}
+\usepackage{tofu}
+\begin{document}
+\begin{tikzpicture}[papier, x=1mm, y=1mm,
+    ev/.style={font=\sffamily\scriptsize, text width=27mm, align=center, inner sep=1pt},
+    date/.style={font=\ttfamily\scriptsize\bfseries, text=#1, inner sep=1pt}]
+  % axis
+  \draw[ligne=Pgris, line width=1.2pt] (0,0) -- (232,0);
+  % events: x position, colour, date, text, above(1)/below(-1)
+  \foreach \x/\c/\d/\t/\s in {
+      4/Pgris/2011-02/{AWS lance CloudFormation}/1,
+      30/Pgris/2014-07/{Terraform 0.1, licence MPL 2.0}/-1,
+      58/Pbrique/2023-08-10/{HashiCorp passe ses produits en BSL 1.1}/1,
+      84/Psapin/2023-08-15/{manifeste OpenTF}/-1,
+      108/Psapin/2023-09-20/{OpenTofu rejoint la Linux Foundation}/1,
+      132/Pbrique/2023-10-04/{Terraform 1.6.0, première version BSL}/-1,
+      156/Psapin/2024-01-10/{OpenTofu 1.6.0 stable}/1,
+      178/Psapin/2024-04-30/{OpenTofu 1.7, chiffrement du state}/-1,
+      200/Pgris/2025-02-27/{IBM achève le rachat de HashiCorp}/1,
+      218/Psapin/2025-04-23/{OpenTofu entre à la CNCF (sandbox)}/-1} {
+    \fill[\c] (\x,0) circle (1.6);
+    \draw[ligne=\c] (\x,{1.6*\s}) -- (\x,{11*\s});
+    \node[date=\c, anchor={\ifnum\s=1 south\else north\fi}] at (\x,{12*\s}) (d) {\d};
+    \node[ev, anchor={\ifnum\s=1 south\else north\fi}] at (\x,{\ifnum\s=1 16\else -16\fi}) {\t};
+  }
+  % legend
+  \fill[Psapin] (60,-34) circle (1.4); \node[et, anchor=west] at (63,-34) {OpenTofu};
+  \fill[Pbrique] (90,-34) circle (1.4); \node[et, anchor=west] at (93,-34) {licence de Terraform};
+  \fill[Pgris] (132,-34) circle (1.4); \node[et, anchor=west] at (135,-34) {contexte};
+\end{tikzpicture}
+\end{document}

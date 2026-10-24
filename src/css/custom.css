@@ -1,0 +1,427 @@
+/*
+ * Design of the OpenTofu course: the plan output.
+ *
+ * Light theme: ivory paper, green-black ink, figures on white plates.
+ * Dark theme: a terminal background with pale green ink.
+ * The three accents are the symbols of `tofu plan`: green for create (+),
+ * amber for update in place (~), red for destroy (-). Frequent mistakes use
+ * the destroy red, costs use the update amber.
+ *
+ * Headings and UI: Inter. Body text: Literata. Code: JetBrains Mono.
+ */
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/literata/wght.css';
+@import '@fontsource-variable/literata/wght-italic.css';
+@import '@fontsource-variable/jetbrains-mono/wght.css';
+
+:root {
+  --tf-paper: #f6f5f0;
+  --tf-plate: #ffffff;
+  --tf-ink: #19231f;
+  --tf-ink-2: #4b5953;
+  --tf-rule: #d9d8ce;
+  --tf-rule-strong: #19231f;
+  --tf-accent: #1f6a4c;
+  --tf-accent-soft: #e2efe8;
+  --tf-add: #2f7d3b;
+  --tf-change: #a3690f;
+  --tf-change-soft: #f7eedb;
+  --tf-destroy: #b3261e;
+  --tf-destroy-soft: #f8e3e0;
+  --tf-sky: #245d8f;
+  --tf-sky-soft: #e2ecf6;
+  --tf-grid: rgba(31, 106, 76, 0.07);
+  --tf-inline-code: #ecebe3;
+
+  --tf-font-heading: 'Inter Variable', system-ui, sans-serif;
+  --tf-font-body: 'Literata Variable', Georgia, serif;
+  --tf-font-ui: 'Inter Variable', system-ui, sans-serif;
+  --tf-font-code: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  /* figure background: figures/svgpost.py maps TikZ white to it */
+  --fig-paper: var(--tf-plate);
+
+  --ifm-color-primary: #1f6a4c;
+  --ifm-color-primary-dark: #1c5f44;
+  --ifm-color-primary-darker: #1a5a40;
+  --ifm-color-primary-darkest: #154a35;
+  --ifm-color-primary-light: #227554;
+  --ifm-color-primary-lighter: #237a58;
+  --ifm-color-primary-lightest: #288a63;
+
+  --ifm-background-color: var(--tf-paper);
+  --ifm-background-surface-color: var(--tf-paper);
+  --ifm-font-color-base: var(--tf-ink);
+  --ifm-heading-color: var(--tf-ink);
+  --ifm-font-family-base: var(--tf-font-body);
+  --ifm-heading-font-family: var(--tf-font-heading);
+  --ifm-font-family-monospace: var(--tf-font-code);
+  --ifm-font-size-base: 108%;
+  --ifm-line-height-base: 1.7;
+  --ifm-heading-font-weight: 650;
+  --ifm-code-font-size: 84%;
+  --ifm-toc-border-color: var(--tf-rule);
+  --ifm-hr-background-color: var(--tf-rule);
+  --ifm-table-border-color: var(--tf-rule);
+  --ifm-navbar-background-color: var(--tf-paper);
+  --ifm-navbar-shadow: none;
+  --ifm-footer-background-color: var(--tf-paper);
+  --ifm-menu-color: var(--tf-ink-2);
+  --ifm-menu-color-background-active: var(--tf-accent-soft);
+  --ifm-color-emphasis-300: var(--tf-rule);
+  --docusaurus-highlighted-code-line-bg: rgba(31, 106, 76, 0.1);
+}
+
+[data-theme='dark'] {
+  --tf-paper: #0e1512;
+  --tf-plate: #141e1a;
+  --tf-ink: #dde7e1;
+  --tf-ink-2: #9db0a7;
+  --tf-rule: #253530;
+  --tf-rule-strong: #9db0a7;
+  --tf-accent: #78c69f;
+  --tf-accent-soft: #17302a;
+  --tf-add: #7cc287;
+  --tf-change: #e3b25a;
+  --tf-change-soft: #2c2616;
+  --tf-destroy: #ef7b70;
+  --tf-destroy-soft: #331c1b;
+  --tf-sky: #82b5e6;
+  --tf-sky-soft: #172a3c;
+  --tf-grid: rgba(120, 198, 159, 0.06);
+  --tf-inline-code: #1a2722;
+
+  --ifm-color-primary: #78c69f;
+  --ifm-color-primary-dark: #60bb8e;
+  --ifm-color-primary-darker: #54b685;
+  --ifm-color-primary-darkest: #42a072;
+  --ifm-color-primary-light: #90d1b0;
+  --ifm-color-primary-lighter: #9cd6b9;
+  --ifm-color-primary-lightest: #c0e5d2;
+  --docusaurus-highlighted-code-line-bg: rgba(120, 198, 159, 0.12);
+}
+
+body {
+  background: var(--tf-paper);
+}
+
+/* ------------------------------------------------------------------ */
+/* Navbar                                                              */
+/* ------------------------------------------------------------------ */
+.navbar {
+  border-bottom: 2px solid var(--tf-rule-strong);
+  font-family: var(--tf-font-ui);
+}
+.navbar__title {
+  font-family: var(--tf-font-code);
+  font-weight: 650;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+}
+.navbar__link {
+  font-size: 0.93rem;
+}
+.navbar__logo {
+  height: 1.6rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sidebar and table of contents                                       */
+/* ------------------------------------------------------------------ */
+.theme-doc-sidebar-container,
+.table-of-contents,
+.pagination-nav,
+.theme-doc-footer,
+.footer {
+  font-family: var(--tf-font-ui);
+}
+.theme-doc-sidebar-container {
+  border-right-color: var(--tf-rule) !important;
+}
+.menu {
+  font-size: 0.88rem;
+}
+.menu__list-item-collapsible > .menu__link--sublist,
+.menu__link--sublist-caret {
+  font-weight: 650;
+  color: var(--tf-ink);
+}
+.menu__link--active:not(.menu__link--sublist) {
+  border-left: 3px solid var(--tf-accent);
+  border-radius: 0;
+  font-weight: 600;
+}
+.table-of-contents {
+  font-size: 0.8rem;
+}
+.table-of-contents__link--active {
+  color: var(--tf-accent);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ */
+/* Chapter header: a resource address, part on the left, chapter right */
+/* ------------------------------------------------------------------ */
+.doc-header {
+  display: flex;
+  align-items: stretch;
+  font-family: var(--tf-font-code);
+  font-size: 0.85rem;
+  margin-bottom: 1.5rem;
+  max-width: 36rem;
+  border: 1px solid var(--tf-rule-strong);
+}
+.doc-header__part {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  color: var(--tf-ink);
+  font-family: var(--tf-font-ui);
+  font-weight: 500;
+}
+.doc-header__tag {
+  font-family: var(--tf-font-code);
+  color: var(--tf-accent);
+  font-weight: 600;
+  padding-right: 0.75rem;
+  border-right: 1px solid var(--tf-rule);
+}
+.doc-header__chapter {
+  display: flex;
+  align-items: center;
+  padding: 0.3rem 0.85rem;
+  font-weight: 650;
+  color: var(--tf-paper);
+  background: var(--tf-accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Text                                                                */
+/* ------------------------------------------------------------------ */
+.markdown h1 {
+  font-size: 2.4rem;
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  margin-bottom: 1.4rem;
+}
+.markdown h2 {
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+  margin-top: 3rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--tf-rule);
+}
+.markdown h3 {
+  font-size: 1.22rem;
+  margin-top: 2rem;
+}
+.markdown h4 {
+  font-size: 1rem;
+}
+.markdown a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+.markdown blockquote {
+  border-left: 3px solid var(--tf-accent);
+  color: var(--tf-ink-2);
+  font-style: italic;
+}
+.markdown :not(pre) > code {
+  background: var(--tf-inline-code);
+  border: 0;
+  padding: 0.08em 0.3em;
+}
+
+/* Tables: horizontal rules only, underlined header */
+.markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--tf-font-ui);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.markdown table thead tr {
+  border-bottom: 2px solid var(--tf-rule-strong);
+}
+.markdown table tr,
+.markdown table tr:nth-child(2n) {
+  background: transparent;
+  border-top: 0;
+  border-bottom: 1px solid var(--tf-rule);
+}
+.markdown table th,
+.markdown table td {
+  border: 0;
+  padding: 0.5rem 0.7rem;
+  vertical-align: top;
+}
+.markdown table th {
+  text-align: left;
+  font-weight: 600;
+}
+
+/* Footnotes (sources) */
+.markdown .footnotes {
+  font-family: var(--tf-font-ui);
+  font-size: 0.8rem;
+  color: var(--tf-ink-2);
+}
+.markdown .footnotes h2 {
+  font-size: 1.05rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Admonitions                                                         */
+/* ------------------------------------------------------------------ */
+.theme-admonition {
+  --tf-box: var(--tf-accent);
+  --tf-box-bg: transparent;
+  background: var(--tf-box-bg);
+  border: 0;
+  border-left: 4px solid var(--tf-box);
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--tf-ink);
+  padding: 0.85rem 1.15rem;
+}
+.theme-admonition [class*='admonitionIcon'] {
+  display: none;
+}
+.theme-admonition [class*='admonitionHeading'] {
+  font-family: var(--tf-font-ui);
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--tf-box);
+  margin-bottom: 0.35rem;
+}
+.theme-admonition a {
+  color: var(--ifm-color-primary);
+}
+.theme-admonition-note,
+.theme-admonition-info { --tf-box: var(--tf-accent); --tf-box-bg: var(--tf-accent-soft); }
+.theme-admonition-tip { --tf-box: var(--tf-add); }
+.theme-admonition-warning,
+.theme-admonition-danger { --tf-box: var(--tf-destroy); --tf-box-bg: var(--tf-destroy-soft); }
+
+/* Frequent mistake: the destroy red */
+.theme-admonition-trap {
+  --tf-box: var(--tf-destroy);
+  --tf-box-bg: var(--tf-destroy-soft);
+}
+.theme-admonition-trap [class*='admonitionHeading']::before {
+  content: '- ';
+  font-family: var(--tf-font-code);
+}
+
+/* Cost: the update amber */
+.theme-admonition-cost {
+  --tf-box: var(--tf-change);
+  --tf-box-bg: var(--tf-change-soft);
+}
+.theme-admonition-cost [class*='admonitionHeading']::before {
+  content: '~ ';
+  font-family: var(--tf-font-code);
+}
+
+/* Other providers: blue, on a white plate */
+.theme-admonition-cloud {
+  --tf-box: var(--tf-sky);
+  --tf-box-bg: var(--tf-sky-soft);
+}
+
+/* Cleanup: a terminal-like box with a dashed frame */
+.theme-admonition-cleanup {
+  --tf-box: var(--tf-ink);
+  border: 1px dashed var(--tf-rule-strong);
+  border-left: 4px solid var(--tf-ink);
+  background: var(--tf-plate);
+}
+.theme-admonition-cleanup [class*='admonitionHeading']::before {
+  content: '$ ';
+  font-family: var(--tf-font-code);
+}
+
+/* Revision sheet: double frame */
+.theme-admonition-summary {
+  --tf-box: var(--tf-ink);
+  border: 3px double var(--tf-rule-strong);
+  background: var(--tf-plate);
+  margin-top: 2.5rem;
+  padding: 1rem 1.3rem;
+}
+.theme-admonition-summary [class*='admonitionHeading'] {
+  font-size: 0.9rem;
+}
+.theme-admonition-summary ul {
+  font-size: 0.95rem;
+  margin-bottom: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Figures: white plate with a faint grid, caption in the UI font      */
+/* ------------------------------------------------------------------ */
+.figure {
+  margin: 2.2rem 0;
+}
+.figure__plate {
+  background-color: var(--tf-plate);
+  background-image:
+    linear-gradient(var(--tf-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tf-grid) 1px, transparent 1px);
+  background-size: 20px 20px;
+  border: 1px solid var(--tf-rule);
+  padding: 1.4rem 1.2rem;
+  text-align: center;
+}
+.figure svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+.figure figcaption {
+  font-family: var(--tf-font-ui);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--tf-ink-2);
+  padding: 0.55rem 0.2rem 0;
+}
+.figure__num {
+  font-family: var(--tf-font-code);
+  font-weight: 650;
+  color: var(--tf-accent);
+  margin-right: 0.6rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Code                                                                */
+/* ------------------------------------------------------------------ */
+.theme-code-block {
+  border: 1px solid var(--tf-rule);
+  border-radius: 0;
+  box-shadow: none;
+}
+.prism-code {
+  font-size: 0.82rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Footer and pagination                                               */
+/* ------------------------------------------------------------------ */
+.footer {
+  border-top: 2px solid var(--tf-rule-strong);
+  color: var(--tf-ink-2);
+  font-size: 0.85rem;
+  padding: 1.4rem;
+}
+.pagination-nav__link {
+  border-radius: 0;
+  border-color: var(--tf-rule);
+}
