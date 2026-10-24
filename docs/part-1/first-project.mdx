@@ -53,7 +53,7 @@ resource "local_file" "greeting" {
 }
 ```
 
-Un bloc `resource` porte deux étiquettes. La première, `random_pet`, est le **type** de ressource ; son préfixe (`random_`) indique le provider qui la gère. La seconde, `name`, est le **nom local**, choisi librement, qui ne sert qu’à désigner la ressource ailleurs dans la configuration. Le couple forme l'**adresse** de la ressource, `random_pet.name`, que toutes les commandes utilisent. Entre les accolades viennent les arguments, dont la liste et le sens sont définis par le provider : `length = 2` demande un nom de deux mots.
+Un bloc `resource` porte deux étiquettes. La première, `random_pet`, est le **type** de ressource ; son préfixe (`random_`) indique le provider qui la gère. La seconde, `name`, est le **nom local**, choisi librement, qui ne sert qu’à désigner la ressource ailleurs dans la configuration. Le couple forme l’**adresse** de la ressource, `random_pet.name`, que toutes les commandes utilisent. Entre les accolades viennent les arguments, dont la liste et le sens sont définis par le provider : `length = 2` demande un nom de deux mots.
 
 `${...}` insère une expression dans une chaîne. `path.module` vaut le chemin du dossier de la configuration, ici `.`. `random_pet.name.id` est l’attribut `id` de la ressource `random_pet.name`, c’est-à-dire le nom généré. Comme au [ch. 1](../part-0/infrastructure-as-code.mdx), cette référence crée une dépendance : le fichier ne peut être écrit qu’une fois le nom connu.
 

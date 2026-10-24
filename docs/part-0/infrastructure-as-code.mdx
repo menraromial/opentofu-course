@@ -270,7 +270,7 @@ Ce que lit et écrit une exécution de <code>tofu apply</code>.
 
 Les flèches pleines se lisent de gauche à droite. `tofu` lit la configuration et le state, interroge l’infrastructure réelle par l’intermédiaire du provider, puis produit le plan. La flèche en pointillés, en bas, est la dernière étape d’un `apply`, l’enregistrement du nouvel état une fois les objets créés ou modifiés.
 
-La **configuration** est l’ensemble des fichiers `.tf` d’un dossier. OpenTofu les lit tous, dans n’importe quel ordre, et les traite comme un seul document. Leur syntaxe, HCL (*HashiCorp Configuration Language*), fait l’objet du ch. 4.
+La **configuration** est l’ensemble des fichiers `.tf` d’un dossier. OpenTofu les lit tous, dans n’importe quel ordre, et les traite comme un seul document. Leur syntaxe, HCL (*HashiCorp Configuration Language*), fait l’objet du [ch. 4](../part-1/hcl-syntax.mdx).
 
 Le **state** (état) est un fichier JSON, `terraform.tfstate` par défaut, dans lequel OpenTofu note ce qu’il a créé. Sans lui, OpenTofu ne pourrait pas savoir que la ressource `docker_container.web` de la configuration correspond au conteneur Docker d’identifiant `c597d952c074...`, ni qu’il en est responsable. C’est ce fichier qui lui a permis, plus haut, de constater la disparition du conteneur : il savait qu’un conteneur de cet identifiant devait exister, l’a cherché et ne l’a pas trouvé. Le state contient aussi les valeurs de tous les attributs, y compris des mots de passe quand une ressource en a, ce qui en fait un fichier sensible. Le ch. 7 lui est consacré, les ch. 20 et 21 expliquent comment le partager et le chiffrer.
 

@@ -17,7 +17,7 @@ const sidebars: SidebarsConfig = {
       label: 'Partie 1 · Le langage et le moteur',
       collapsed: false,
       link: {type: 'doc', id: 'part-1/index'},
-      items: ['part-1/first-project'],
+      items: ['part-1/first-project', 'part-1/hcl-syntax'],
     },
   ],
 };

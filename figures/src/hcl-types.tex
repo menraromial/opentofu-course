@@ -1,0 +1,32 @@
+% The three families of HCL types and the automatic conversions between them.
+\documentclass[border=6pt]{standalone}
+\usepackage{tofu}
+\begin{document}
+\begin{tikzpicture}[papier,
+    fam/.style={cadre, minimum width=54mm, minimum height=48mm, anchor=north},
+    t/.style={bloc=#1, minimum width=46mm, minimum height=9mm, text width=43mm, align=left, font=\small},
+    head/.style={font=\sffamily\bfseries\small, text=Dink}]
+  \node[fam] (p) at (0,0) {};
+  \node[fam] (c) at (62mm,0) {};
+  \node[fam] (s) at (124mm,0) {};
+  \node[head, below=2mm of p.north] (hp) {primitifs};
+  \node[head, below=2mm of c.north] (hc) {collections};
+  \node[head, below=2mm of s.north] (hs) {structures};
+  \node[t=Pjaune, below=3mm of hp] (str) {\ttfamily string \ \textcolor{Pgris}{"web"}};
+  \node[t=Pjaune, below=2mm of str] (num) {\ttfamily number \ \textcolor{Pgris}{443, 0.5}};
+  \node[t=Pjaune, below=2mm of num] (bool) {\ttfamily bool \ \textcolor{Pgris}{true}};
+  \node[t=Pbleu, below=3mm of hc] (list) {\ttfamily list(T) \ \textcolor{Pgris}{ordonnée}};
+  \node[t=Pbleu, below=6mm of list] (set) {\ttfamily set(T) \ \textcolor{Pgris}{sans doublon}};
+  \node[t=Pbleu, below=2mm of set] (map) {\ttfamily map(T) \ \textcolor{Pgris}{clés chaînes}};
+  \node[t=Plavande, below=3mm of hs] (tup) {\ttfamily tuple([T1, T2]) \ \textcolor{Pgris}{[80, "a"]}};
+  \node[t=Plavande, below=2mm of tup] (obj) {\ttfamily object(\{a = T1\}) \ \textcolor{Pgris}{\{a = 1\}}};
+  \node[et=Pgris, below=3mm of obj, text width=48mm] {un type par élément ;\\ c'est ce qu'écrivent [ ] et \{ \}};
+  \node[et=Pgris, below=3mm of map, text width=48mm] {tous les éléments du même type T};
+  % conversions
+  \draw[fld=Pbrun] (tup.west) to[out=180, in=0] node[etb=Pbrun, above, pos=0.5] {tolist} (list.east);
+  \draw[fld=Pbrun] (obj.west) to[out=180, in=0] node[etb=Pbrun, below, pos=0.5] {tomap} (map.east);
+  \draw[fld=Pbrun] ([xshift=6mm]list.south west) -- node[etb=Pbrun, right] {toset} ([xshift=6mm]set.north west);
+  \node[et=Pbrun, below=3mm of bool, text width=48mm, font=\sffamily\scriptsize\bfseries] {"443" $\leftrightarrow$ 443, \ "true" $\leftrightarrow$ true};
+  \node[et=Pgris, below=6mm of c.south, text width=150mm] {conversions automatiques quand un argument attend un type précis, erreur si la valeur ne s'y prête pas : {\ttfamily tonumber("12abc")}};
+\end{tikzpicture}
+\end{document}

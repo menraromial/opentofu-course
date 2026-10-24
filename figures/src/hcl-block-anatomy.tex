@@ -1,0 +1,32 @@
+% The parts of an HCL block, labelled on real code from the chapter.
+\documentclass[border=6pt]{standalone}
+\usepackage{tofu}
+\begin{document}
+\begin{tikzpicture}[papier,
+    ln/.style={font=\ttfamily\small, anchor=west, inner sep=1pt, text=Dink},
+    lab/.style={font=\sffamily\scriptsize\bfseries, text=#1, anchor=west, align=left},
+    tick/.style={draw=#1, line width=0.7pt}]
+  \node[cadre, minimum width=96mm, minimum height=64mm, anchor=north west] (frame) at (0,0) {};
+  \begin{scope}[shift={(4mm,-5mm)}]
+    \node[ln] (l1) at (0,0) {\textcolor{Pbrun}{resource} \textcolor{Pmarine}{"docker\_container"} \textcolor{Psapin}{"web"} \{};
+    \node[ln] (l2) at (0,-7mm) {\ \ \textcolor{Dink}{name}\ \ = \textcolor{Dpurple}{"ch01-web"}};
+    \node[ln] (l3) at (0,-14mm) {\ \ \textcolor{Dink}{image} = \textcolor{Dpurple}{docker\_image.nginx.image\_id}};
+    \node[ln] (l4) at (0,-24mm) {\ \ \textcolor{Pbrun}{ports} \{};
+    \node[ln] (l5) at (0,-31mm) {\ \ \ \ internal = \textcolor{Dpurple}{80}};
+    \node[ln] (l6) at (0,-38mm) {\ \ \}};
+    \node[ln] (l7) at (0,-45mm) {\}};
+    \node[ln, text=Pgris] (l8) at (0,-52mm) {\# a comment};
+  \end{scope}
+  % annotations on the right, one per code line
+
+  \node[lab=Dink] (a1) at (104mm,0 |- l1) {\textcolor{Pbrun}{type de bloc}, \textcolor{Pmarine}{type de ressource}, \textcolor{Psapin}{nom local}};
+  \node[lab=Dink] (a2) at (104mm,0 |- l2) {argument : nom = expression};
+  \node[lab=Dpurple] (a3) at (104mm,0 |- l3) {expression : référence à un autre objet};
+  \node[lab=Pbrun] (a4) at (104mm,0 |- l4) {bloc imbriqué : pas de signe =};
+  \node[lab=Pgris] (a5) at (104mm,0 |- l8) {commentaire : \#, // ou /* */};
+  \foreach \i in {1,...,5} {\draw[tick=Pgris, densely dotted] (frame.east |- a\i) -- (a\i.west);}
+  % body brace
+  \draw[ligne=Pgris, decorate, decoration={brace, amplitude=4pt}]
+    ([xshift=-2mm]frame.west |- l7.south) -- node[et=Pgris, left=5pt] {corps} ([xshift=-2mm]frame.west |- l2.north);
+\end{tikzpicture}
+\end{document}

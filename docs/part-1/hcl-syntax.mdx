@@ -1,0 +1,583 @@
+---
+title: La syntaxe HCL
+sidebar_label: 4. La syntaxe HCL
+description: Blocs, arguments et expressions ; les types de valeurs et leurs conversions ; références, chaînes, gabarits et heredocs ; tofu console pour expérimenter et tofu fmt pour mettre en forme.
+part: 1
+chapter: 4
+---
+
+import blockAnatomy from '@site/src/figures/hcl-block-anatomy.svg';
+import hclTypes from '@site/src/figures/hcl-types.svg';
+
+Les fichiers `.tf` sont écrits en HCL (*HashiCorp Configuration Language*), un langage de configuration créé par HashiCorp pour ses outils et repris tel quel par OpenTofu. HCL n’est pas un langage de programmation : on n’y écrit ni fonction, ni boucle d’instructions, ni affectation qu’on relirait plus loin. On y décrit des objets, avec des valeurs qui peuvent être calculées par des expressions. Ce chapitre en donne la grammaire, les types et les règles de conversion, en s’appuyant sur `tofu console`, qui évalue une expression et affiche le résultat. Le TP est dans [`labs/ch04/hcl-tour`](https://github.com/menraromial/opentofu-course/tree/main/labs/ch04/hcl-tour).
+
+## Blocs, arguments, expressions
+
+Un fichier HCL est une suite de **blocs** et d’**arguments**. Un bloc a un type, zéro ou plusieurs étiquettes entre guillemets, et un corps entre accolades. Un argument associe un nom à une expression avec le signe `=`. Le corps d’un bloc contient à son tour des arguments et des blocs imbriqués[^syntax].
+
+<Figure svg={blockAnatomy} num="4.1" alt="Le bloc resource docker_container web du chapitre 1, annoté : type de bloc, type de ressource et nom local sur la première ligne, arguments name et image, expression qui référence docker_image.nginx.image_id, bloc imbriqué ports sans signe égal, commentaire.">
+Les éléments d’un bloc, sur le conteneur du [ch. 1](../part-0/infrastructure-as-code.mdx).
+</Figure>
+
+La figure se lit ligne par ligne, chaque repère à droite nommant ce que contient la ligne. Le type de bloc (`resource`) fixe le nombre d’étiquettes : deux pour une ressource, une pour un `provider` ou une `variable`, aucune pour `terraform` ou `language`. Les arguments et les blocs imbriqués autorisés dans le corps ne sont pas définis par HCL mais par le schéma de ce bloc. Pour une ressource, c’est le provider qui fournit ce schéma, et c’est pourquoi `tofu validate` a besoin que `tofu init` ait installé les providers.
+
+L’ordre n’a pas d’importance. OpenTofu lit tous les fichiers `.tf` d’un dossier comme un seul document, et l’ordre des blocs dans un fichier ou entre fichiers ne change rien au résultat ; c’est le graphe des références qui décide de l’ordre des actions (ch. 8). Les noms (types de blocs, étiquettes, arguments) sont des identifiants faits de lettres, de chiffres, de tirets bas et de tirets, qui ne commencent pas par un chiffre. Les fichiers sont en UTF-8.
+
+### Bloc imbriqué ou argument
+
+Deux écritures se ressemblent et ne sont pas interchangeables. `ports { ... }` est un bloc imbriqué, sans signe égal, qu’on peut répéter pour publier plusieurs ports. `tags = { ... }`, que l’on verra sur toutes les ressources AWS, est un argument dont la valeur est un objet. C’est le schéma qui dit laquelle des deux formes attend chaque nom, et l’erreur inverse est fréquente. Voici ce que répond `tofu validate` à un conteneur Docker écrit avec `ports = { ... }` et `env { ... }`, alors que le schéma attend un bloc `ports` et un argument `env` :
+
+```console
+$ tofu validate
+
+Error: Unsupported argument
+
+  on main.tf line 14, in resource "docker_container" "web":
+  14:   ports = {
+
+An argument named "ports" is not expected here. Did you mean to define a
+block of type "ports"?
+
+Error: Unsupported block type
+
+  on main.tf line 24, in resource "docker_container" "web":
+  24:   env {
+
+Blocks of type "env" are not expected here. Did you mean to define argument
+"env"? If so, use the equals sign to assign it a value.
+```
+
+Les messages disent exactement quoi corriger. La documentation de chaque ressource, sur le registre, sépare d’ailleurs les *arguments* des *nested blocks*. Pour `env`, la valeur attendue est un ensemble de chaînes, `env = ["MODE=demo"]`.
+
+### Commentaires
+
+HCL accepte trois formes : `#` et `//` jusqu’à la fin de la ligne, `/* ... */` sur plusieurs lignes. `tofu fmt` ne les modifie pas. L’usage, que suit ce cours, est `#` pour les commentaires de ligne.
+
+```hcl title="labs/ch04/hcl-tour/main.tf (début)"
+/*
+  A tour of the HCL syntax: blocks, arguments, every type of value,
+  references between resources, string templates and heredocs.
+*/
+
+# A random name for an imaginary server.
+resource "random_pet" "server" {
+  length = 2 // two words, joined by "-"
+}
+```
+
+## Expérimenter avec `tofu console`
+
+`tofu console` ouvre une invite qui évalue des expressions dans le contexte de la configuration du dossier courant, et de son state s’il existe. On peut aussi lui passer une expression par l’entrée standard, ce que font les exemples de ce chapitre :
+
+```console
+$ echo '"${1 + 2} items"' | tofu console
+"3 items"
+$ echo 'upper("hi")' | tofu console
+"HI"
+```
+
+En mode interactif, on tape les expressions après l’invite `>` et l’on quitte avec `exit` ou Ctrl+D. La console a une fonction qui n’existe qu’en elle, `type()`, qui affiche le type d’une valeur[^type] ; elle sert dans toute la suite du chapitre.
+
+## Les types
+
+Chaque valeur a un type. Il y en a trois familles.
+
+<Figure svg={hclTypes} num="4.2" alt="Trois colonnes. Primitifs : string, number, bool. Collections : list, set, map, dont tous les éléments ont le même type. Structures : tuple et object, un type par élément. Flèches de conversion tolist du tuple vers la liste, tomap de l’objet vers la map, toset de la liste vers l’ensemble.">
+Les trois familles de types et les conversions entre elles.
+</Figure>
+
+La figure se lit par colonnes. Les primitifs sont des valeurs simples. Les collections regroupent des éléments qui ont tous le même type, noté entre parenthèses. Les structures regroupent des éléments qui ont chacun leur propre type. Les flèches sont les conversions que l’on peut demander explicitement, et qu’OpenTofu fait aussi tout seul quand un argument attend une collection.
+
+### Les primitifs
+
+```console
+$ echo 'type("abc")' | tofu console
+string
+$ echo 'type(42)' | tofu console
+number
+$ echo 'type(true)' | tofu console
+bool
+```
+
+Il n’y a qu’un type de nombre, pour les entiers comme pour les décimaux, et il ne perd pas de précision là où un flottant habituel en perdrait :
+
+```console
+$ echo '10 / 4' | tofu console
+2.5
+$ echo '0.1 + 0.2' | tofu console
+0.3
+$ echo '9007199254740993 + 0' | tofu console
+9007199254740993
+```
+
+`0.1 + 0.2` vaut exactement `0.3`, et l’entier 9 007 199 254 740 993 (2⁵³ + 1, le premier qu’un flottant double précision ne sait pas représenter) est conservé. La valeur `null` représente l’absence de valeur. Donner `null` à un argument revient à ne pas l’écrire, et le provider applique alors sa valeur par défaut.
+
+### Collections et structures
+
+Les crochets et les accolades n’écrivent pas des listes et des maps, mais des tuples et des objets :
+
+```console
+$ echo 'type([1, 2])' | tofu console
+tuple([
+    number,
+    number,
+])
+$ echo 'type(["a", 1])' | tofu console
+tuple([
+    string,
+    number,
+])
+$ echo 'type({a = 1})' | tofu console
+object({
+    a: number,
+})
+```
+
+Un tuple a une longueur fixe et un type par position ; un objet a des attributs fixes et un type par attribut. Les collections, elles, ont un seul type d’élément. On les obtient par conversion :
+
+```console
+$ echo 'tolist(["a", 1])' | tofu console
+tolist([
+  "a",
+  "1",
+])
+$ echo 'toset(["b", "a", "b"])' | tofu console
+toset([
+  "a",
+  "b",
+])
+$ echo 'tomap({a = 1, b = "x"})' | tofu console
+tomap({
+  "a" = "1"
+  "b" = "x"
+})
+```
+
+Pour faire une liste de `"a"` et `1`, OpenTofu a dû trouver un type commun ; il a converti le nombre en chaîne. L’ensemble a perdu son doublon et rangé ses éléments dans un ordre qui lui est propre. La map a fait de même avec ses valeurs. Dans la plupart des cas, on n’écrit pas ces conversions : quand un argument est déclaré comme `list(string)` ou `map(string)` dans le schéma d’une ressource, OpenTofu convertit le tuple ou l’objet qu’on lui donne.
+
+Un ensemble n’a pas d’indice. Ses éléments ne sont identifiés que par leur valeur :
+
+```console
+$ echo 'toset(["web", "www"])[0]' | tofu console
+
+Error: Invalid index
+
+  on <console-input> line 1:
+  (source code not available)
+
+Elements of a set are identified only by their value and don't have any
+separate index or key to select with, so it's only possible to perform
+operations across all elements of the set.
+```
+
+Cette propriété aura des conséquences au ch. 12, où `for_each` accepte un ensemble de chaînes ou une map, mais pas une liste.
+
+### Les conversions automatiques
+
+OpenTofu convertit aussi les primitifs entre eux quand une opération l’exige :
+
+```console
+$ echo '"5" + 1' | tofu console
+6
+$ echo 'true && "true"' | tofu console
+true
+$ echo 'tonumber("12abc")' | tofu console
+
+Error: Invalid function argument
+...
+Invalid value for "v" parameter: cannot convert "12abc" to number; given
+string must be a decimal representation of a number.
+```
+
+L’addition a converti `"5"` en nombre, le `&&` a converti `"true"` en booléen, et la conversion échoue avec un message clair quand la chaîne ne représente pas un nombre.
+
+L’égalité, elle, ne convertit jamais. Deux valeurs de types différents ne sont pas égales, même quand elles s’écrivent pareil :
+
+```console
+$ echo '1 == "1"' | tofu console
+false
+$ echo '"443" == 443' | tofu console
+false
+$ echo '[1, 2] == [1, 2]' | tofu console
+true
+$ echo 'tolist([1, 2]) == [1, 2]' | tofu console
+false
+$ echo 'tomap({a = 1}) == {a = 1}' | tofu console
+false
+```
+
+Les deux dernières lignes surprennent souvent. Une liste n’est pas égale au tuple qui contient les mêmes nombres, parce que leurs types diffèrent. Comparer un attribut de ressource de type `list(string)` à un littéral `["a", "b"]` donne donc `false` ; il faut convertir l’un des deux côtés (`tolist([...])`) ou comparer élément par élément.
+
+L’expression conditionnelle `condition ? a : b`, que le ch. 13 détaille, a le même genre de comportement. Ses deux branches doivent avoir un type commun, et OpenTofu convertit pour en trouver un :
+
+```console
+$ echo 'true ? 1 : "x"' | tofu console
+"1"
+$ echo 'type(true ? 1 : "2")' | tofu console
+string
+```
+
+La branche choisie valait le nombre `1`, et le résultat est la chaîne `"1"`.
+
+## Références et accès
+
+Une référence désigne une valeur d’un autre objet de la configuration. Pour une ressource, on écrit `type.nom.attribut`. On accède à un attribut d’objet par un point et à un élément de liste, de tuple ou de map par des crochets. Après un `apply` du TP, la console lit les valeurs dans le state :
+
+```console
+$ echo 'random_pet.server' | tofu console
+{
+  "id" = "noble-redfish"
+  "keepers" = tomap(null) /* of string */
+  "length" = 2
+  "prefix" = tostring(null)
+  "separator" = "-"
+}
+$ echo 'terraform_data.inventory.output.tags["course"]' | tofu console
+"opentofu"
+$ echo 'terraform_data.inventory.output.ports[1]' | tofu console
+443
+$ echo 'random_pet.server.nope' | tofu console
+
+Error: Unsupported attribute
+...
+This object has no argument, nested block, or exported attribute named
+"nope".
+```
+
+Une ressource est un objet dont les attributs sont ses arguments (`length`) et les valeurs qu’elle exporte (`id`). Les attributs absents valent `null`, avec leur type : `tostring(null)` est un `null` de type chaîne. Un attribut qui n’existe pas dans le schéma est refusé.
+
+D’autres références ne désignent pas des ressources :
+
+```console
+$ echo 'path.module' | tofu console
+"."
+$ echo 'path.cwd' | tofu console
+"/home/romial/these/docs/opentofu/labs/ch04/hcl-tour"
+$ echo 'terraform.workspace' | tofu console
+"default"
+```
+
+`path.module` est le dossier du module où l’expression est écrite, à utiliser pour tout chemin de fichier dans une configuration ; `path.cwd` est le dossier d’où `tofu` est lancé, qui varie selon l’utilisateur. `terraform.workspace` donne l’espace de travail courant (ch. 22). Les chapitres suivants ajouteront `var.` pour les variables, `local.` pour les valeurs locales (ch. 5), `data.` pour les sources de données (ch. 9) et `module.` pour les modules (ch. 15).
+
+## Le TP : une valeur de chaque type
+
+La ressource `terraform_data` du TP garde un objet qui contient une valeur de chaque sorte :
+
+```hcl title="labs/ch04/hcl-tour/main.tf (suite)"
+# An object kept in the state, holding one value of each kind.
+resource "terraform_data" "inventory" {
+  input = {
+    name    = random_pet.server.id         # string, known after apply
+    cpus    = 2                            # number
+    public  = false                        # bool
+    ports   = [80, 443]                    # tuple, converted as needed
+    aliases = toset(["web", "www", "web"]) # set: duplicates disappear
+    tags = {                               # object
+      course  = "opentofu"
+      chapter = "04"
+    }
+  }
+}
+```
+
+Le plan montre déjà le doublon disparu (`aliases` ne contient que `"web"` et `"www"`) et le nom inconnu avant l'`apply` :
+
+```console
+$ tofu plan
+...
+  # terraform_data.inventory will be created
+  + resource "terraform_data" "inventory" {
+      + id     = (known after apply)
+      + input  = {
+          + aliases = [
+              + "web",
+              + "www",
+            ]
+          + cpus    = 2
+          + name    = (known after apply)
+          + ports   = [
+              + 80,
+              + 443,
+            ]
+          + public  = false
+          + tags    = {
+              + chapter = "04"
+              + course  = "opentofu"
+            }
+        }
+      + output = (known after apply)
+    }
+```
+
+Après l'`apply`, `type()` donne le type complet de cet objet, imbrications comprises :
+
+```console
+$ echo 'type(terraform_data.inventory.output)' | tofu console
+object({
+    aliases: set(string),
+    cpus: number,
+    name: string,
+    ports: tuple([
+        number,
+        number,
+    ]),
+    public: bool,
+    tags: object({
+        chapter: string,
+        course: string,
+    }),
+})
+```
+
+## Chaînes, gabarits et heredocs
+
+### Chaînes entre guillemets
+
+Une chaîne s’écrit entre guillemets droits. La barre oblique inverse introduit les séquences d’échappement habituelles, `\n`, `\t`, `\"`, `\\`, et `\uNNNN` pour un caractère Unicode :
+
+```console
+$ echo '"été"' | tofu console
+"été"
+```
+
+Une chaîne est en réalité un gabarit (*template*). `${ ... }` y insère le résultat d’une expression, et `%{ ... }` une directive, `if` ou `for` :
+
+```console
+$ echo '"%{ if true }yes%{ else }no%{ endif }"' | tofu console
+"yes"
+$ echo '"%{ for n in [1, 2, 3] }${n},%{ endfor }"' | tofu console
+"1,2,3,"
+$ echo '"$${not_interpolated}"' | tofu console
+"${not_interpolated}"
+```
+
+Pour écrire littéralement `${` ou `%{`, on double le premier caractère, `$${` ou `%%{`. C’est utile quand le texte produit est lui-même un script shell ou un gabarit d’un autre outil.
+
+### Heredocs
+
+Pour un texte de plusieurs lignes, HCL a la syntaxe *heredoc*, empruntée aux shells. `<<EOT` ouvre le texte, qui se termine par une ligne contenant seulement `EOT` (n’importe quel identifiant convient à la place de `EOT`). La variante `<<-EOT` retire l’indentation commune des lignes, ce qui permet d’aligner le texte sur le code[^strings].
+
+Le fichier du TP mélange heredoc et directives, et c’est là que se trouve un piège. Voici trois écritures d’un même petit texte, évaluées par la console ; `local.ports` vaut `[80, 443]` (le ch. 5 présente les valeurs locales). La première utilise `<<-EOT` et des marqueurs `~` avant les accolades fermantes :
+
+```hcl
+<<-EOT
+    Server x
+    %{for port in local.ports~}
+    - port ${port}
+    %{endfor~}
+    End
+  EOT
+```
+
+```console
+Server x
+    - port 80
+    - port 443
+    End
+```
+
+La deuxième garde `<<-EOT` sans aucun marqueur :
+
+```console
+Server x
+
+- port 80
+
+- port 443
+
+End
+```
+
+Dans le premier cas, l’indentation n’est retirée que de la première ligne. Dans le second, elle est retirée partout, mais chaque ligne de directive laisse une ligne vide. Le marqueur `~` (*strip marker*) fait consommer à la directive les espaces et retours à la ligne qui la précèdent (s’il est juste après `%{`) ou qui la suivent (s’il est juste avant `}`) ; il retire bien les lignes vides, mais il défait le calcul de l’indentation commune. La seule combinaison qui donne un texte propre est un heredoc non indenté, `<<EOT`, avec `~` à la fin de chaque directive :
+
+```hcl
+<<EOT
+Server x
+%{for port in local.ports~}
+- port ${port}
+%{endfor~}
+End
+EOT
+```
+
+```console
+Server x
+- port 80
+- port 443
+End
+```
+
+C’est d’ailleurs la forme que montre la documentation d’OpenTofu dans sa section sur le retrait des espaces[^strings]. Le TP l’utilise, au prix d’un texte collé à la marge dans le code :
+
+```hcl title="labs/ch04/hcl-tour/main.tf (fin)"
+# A text file rendered from a heredoc with template directives.
+# The heredoc is not indented: see the chapter for why.
+resource "local_file" "motd" {
+  filename        = "${path.module}/out/motd.txt"
+  file_permission = "0644"
+  content         = <<EOT
+Server ${terraform_data.inventory.output.name} (${terraform_data.inventory.output.cpus} CPUs)
+%{for port in terraform_data.inventory.output.ports~}
+- listens on port ${port}
+%{endfor~}
+Visibility: %{if terraform_data.inventory.output.public}public%{else}private%{endif}
+EOT
+}
+```
+
+```console
+$ tofu apply
+...
+Apply complete! Resources: 3 added, 0 changed, 0 destroyed.
+$ cat -A out/motd.txt
+Server noble-redfish (2 CPUs)$
+- listens on port 80$
+- listens on port 443$
+Visibility: private$
+```
+
+`cat -A` marque chaque fin de ligne par `$` : aucune ligne vide, aucun espace en tête. Dès qu’un gabarit grossit, on le sort du code dans un fichier à part, rendu par la fonction `templatefile()` ; le ch. 11 l’utilise pour le script de démarrage d’une machine virtuelle.
+
+## `tofu fmt`
+
+`tofu fmt` réécrit les fichiers selon le style canonique : deux espaces d’indentation, signes `=` alignés dans un groupe d’arguments consécutifs, espaces normalisés[^fmt]. Sur un fichier mal mis en forme :
+
+```console
+$ cat messy.tf
+resource "random_pet" "server" {
+length=2
+    separator   =  "_"
+  prefix = "srv"
+}
+$ tofu fmt -check
+messy.tf
+$ echo $?
+3
+$ tofu fmt -diff
+messy.tf
+--- old/messy.tf
++++ new/messy.tf
+@@ -1,5 +1,5 @@
+ resource "random_pet" "server" {
+-length=2
+-    separator   =  "_"
+-  prefix = "srv"
++  length    = 2
++  separator = "_"
++  prefix    = "srv"
+ }
+```
+
+`-check` ne modifie rien et liste les fichiers à reformater, avec un code de retour non nul (3 ici), ce qui en fait un contrôle d’intégration continue (ch. 30). Sans option, `tofu fmt` réécrit les fichiers et affiche leur nom ; `-diff` montre les changements ; `-recursive` descend dans les sous-dossiers. `tofu fmt` reformate aussi l’intérieur des directives de gabarit. Sur la première version du TP, il a transformé `%{~ for port in ... }` en `%{~for port in ...}`.
+
+## La syntaxe JSON
+
+Toute configuration peut aussi s’écrire en JSON, dans des fichiers `.tf.json` (ou `.tofu.json`). La structure suit celle des blocs, avec les étiquettes comme clés imbriquées, et les chaînes y sont toujours interprétées comme des gabarits[^json] :
+
+```json title="main.tf.json"
+{
+  "resource": {
+    "random_pet": {
+      "server": {
+        "length": 2,
+        "prefix": "${upper(\"srv\")}"
+      }
+    }
+  }
+}
+```
+
+```console
+$ tofu plan
+...
+  # random_pet.server will be created
+  + resource "random_pet" "server" {
+      + id        = (known after apply)
+      + length    = 2
+      + prefix    = "SRV"
+      + separator = "-"
+    }
+```
+
+Personne n’écrit du `.tf.json` à la main. Cette forme sert aux programmes qui génèrent une configuration, parce que produire du JSON valide est plus sûr que produire du HCL.
+
+:::cleanup
+Dans `labs/ch04/hcl-tour` :
+
+```bash
+tofu destroy
+rm -rf .terraform out terraform.tfstate terraform.tfstate.backup
+```
+:::
+
+## Erreurs fréquentes
+
+:::trap[Confondre bloc imbriqué et argument objet]
+`ports { ... }` et `tags = { ... }` ne s’écrivent pas pareil. Le signe `=` en trop ou en moins donne `Unsupported argument` ou `Unsupported block type`, avec la bonne forme suggérée dans le message.
+:::
+
+:::trap[Comparer une liste à un littéral entre crochets]
+`[ ... ]` est un tuple. `tolist(["a"]) == ["a"]` vaut `false`, et une condition qui compare un attribut `list(string)` à un littéral n’est jamais vraie. Convertir l’un des deux côtés.
+:::
+
+:::trap[Indenter un heredoc qui contient des directives]
+Avec `<<-EOT` et des directives `%{ }`, l’indentation n’est pas retirée correctement ou des lignes vides apparaissent. Utiliser `<<EOT` sans indentation et `~` à la fin des directives, ou sortir le gabarit dans un fichier rendu par `templatefile()`.
+:::
+
+:::trap[Utiliser `path.cwd` pour un chemin de fichier]
+`path.cwd` dépend du dossier d’où l’on lance `tofu`. Un chemin construit dessus casse dès qu’on lance la commande d’ailleurs ou que la configuration devient un module. `path.module` est le bon point de départ.
+:::
+
+## Exercices
+
+1. Donnez le type de chacune de ces valeurs, puis vérifiez avec `type()` : `["a", "b"]`, `toset(["a", "b"])`, `{ port = 80, tls = true }`, `tomap({ a = "x", b = "y" })`.
+2. Pourquoi `tolist(["a"]) == ["a"]` vaut-il `false` alors que `["a"] == ["a"]` vaut `true` ? Comment écrire une comparaison qui fonctionne ?
+3. Que produit `"%{ for s in ["a", "b"] }<${s}>%{ endfor }"` ? Et comment écrire littéralement la chaîne `${HOME}` dans un fichier généré par OpenTofu ?
+4. Exercice pratique. Dans une copie de `labs/ch04/hcl-tour`, ajoutez la valeur `8080` à `ports` et passez `public` à `true`. Prévoyez ce que deviendra le plan pour chacune des trois ressources, puis vérifiez avec `tofu apply` et `cat -A out/motd.txt`.
+
+## Corrigés
+
+**1.** `["a", "b"]` est un `tuple([string, string])` ; `toset(["a", "b"])` un `set(string)` ; `{ port = 80, tls = true }` un `object({ port: number, tls: bool })` ; `tomap({ a = "x", b = "y" })` une `map(string)`. Les crochets et les accolades donnent toujours des structures ; seules les fonctions de conversion, ou un argument déclaré avec un type de collection, produisent des collections.
+
+**2.** L’égalité compare aussi les types, et elle ne convertit pas. `tolist(["a"])` est une `list(string)`, `["a"]` un `tuple([string])` : types différents, résultat `false`. Deux tuples identiques sont égaux. On écrit `tolist(["a"]) == tolist(["a"])`, ou bien on compare des éléments (`x[0] == "a"`) ou des longueurs et des contenus avec les fonctions du ch. 13.
+
+**3.** La directive répète son contenu pour chaque élément et produit `"<a><b>"`. Pour écrire `${HOME}` littéralement, on double le dollar, `"$${HOME}"` ; c’est la forme à utiliser dans un script shell généré par un gabarit. Sans le doublement, OpenTofu cherche à évaluer `HOME` comme une référence et échoue avec `Error: Invalid reference`, en expliquant qu’une référence à un type de ressource doit être suivie d’un nom.
+
+**4.** `terraform_data.inventory` est modifié en place (`~`), puisque son `input` change ; son `output` repasse à `(known after apply)`. `random_pet.server` ne change pas. Le contenu de `local_file.motd` dépend de `output`, inconnu avant l'`apply`, et tout changement de contenu impose un remplacement (`-/+`), comme au [ch. 3](first-project.mdx). Après l'`apply`, le fichier contient une ligne de port de plus et `Visibility: public` :
+
+```console
+$ tofu plan
+...
+  # local_file.motd must be replaced
+...
+  # terraform_data.inventory will be updated in-place
+...
+Plan: 1 to add, 1 to change, 1 to destroy.
+$ tofu apply
+...
+$ cat -A out/motd.txt
+Server arriving-giraffe (2 CPUs)$
+- listens on port 80$
+- listens on port 443$
+- listens on port 8080$
+Visibility: public$
+```
+
+Le nom (`arriving-giraffe` dans la copie de test) reste celui tiré au premier `apply` de la copie, puisque `random_pet.server` n’a pas été remplacé.
+
+:::summary
+- Un fichier HCL est fait de blocs (type, étiquettes, corps) et d’arguments (`nom = expression`) ; le schéma du bloc dit lesquels sont permis.
+- Bloc imbriqué sans `=`, argument objet avec `=` : les messages d’erreur indiquent la forme attendue.
+- Types : primitifs (`string`, `number`, `bool`), collections d’un seul type (`list`, `set`, `map`), structures (`tuple`, `object`) ; `[ ]` et `{ }` écrivent des structures.
+- Les opérations convertissent (`"5" + 1` vaut 6), l’égalité jamais (`1 == "1"` est faux, une liste n’égale pas un tuple).
+- Un ensemble n’a pas d’indice ; une conditionnelle unifie le type de ses deux branches.
+- Références : `type.nom.attribut`, `path.module`, `terraform.workspace` ; `tofu console` et `type()` pour vérifier.
+- Gabarits : `${ }` pour une valeur, `%{ if }` et `%{ for }` pour les directives, `$${` pour un `${` littéral ; avec des directives, heredoc `<<EOT` non indenté et `~}`.
+- `tofu fmt -check` pour contrôler, `tofu fmt` pour réécrire.
+:::
+
+[^syntax]: OpenTofu, « Syntax », [https://opentofu.org/docs/language/syntax/configuration/](https://opentofu.org/docs/language/syntax/configuration/).
+[^type]: OpenTofu, « type Function », [https://opentofu.org/docs/language/functions/type/](https://opentofu.org/docs/language/functions/type/).
+[^strings]: OpenTofu, « Strings and Templates », sections *Heredoc Strings* et *Whitespace Stripping*, [https://opentofu.org/docs/language/expressions/strings/](https://opentofu.org/docs/language/expressions/strings/).
+[^fmt]: OpenTofu, « Command: fmt », [https://opentofu.org/docs/cli/commands/fmt/](https://opentofu.org/docs/cli/commands/fmt/).
+[^json]: OpenTofu, « JSON Configuration Syntax », [https://opentofu.org/docs/language/syntax/json/](https://opentofu.org/docs/language/syntax/json/).
